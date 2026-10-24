@@ -75,6 +75,23 @@ pub struct Backend {
     executable: PathBuf,
 }
 
+/// 返回 wanted 中不在标签列表里的名字；列表结构异常时视为全部缺失，交给创建步骤报错。
+fn missing_tags(existing: &Value, wanted: &[String]) -> Vec<String> {
+    let names = existing
+        .as_array()
+        .map(|tags| {
+            tags.iter()
+                .filter_map(|tag| tag.get("name").and_then(|name| name.as_str()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    wanted
+        .iter()
+        .filter(|tag| !names.contains(&tag.as_str()))
+        .cloned()
+        .collect()
+}
+
 impl Backend {
     pub fn new() -> Self {
         let executable = env::var_os("OMNIFOCUS_CLI")
@@ -190,6 +207,7 @@ impl Backend {
         args.push("--".into());
         args.push(name.trim().into());
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.ensure_tags(tags)?;
         self.call(&args)
     }
 
@@ -220,9 +238,21 @@ impl Backend {
         if let Some(tags) = tags.filter(|tags| !tags.is_empty()) {
             args.push("--tag".into());
             args.extend(tags.iter().cloned());
+            self.ensure_tags(tags)?;
         }
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         self.call(&args)
+    }
+
+    /// of 的 --tag 只按名字关联已有标签，不存在时直接 404；先创建缺失的标签。
+    fn ensure_tags(&self, tags: &[String]) -> Result<(), String> {
+        if tags.is_empty() {
+            return Ok(());
+        }
+        for tag in missing_tags(&self.call(&["tag", "list"])?, tags) {
+            self.call(&["tag", "create", "--", &tag])?;
+        }
+        Ok(())
     }
 
     pub fn flag(&self, id: &str, flagged: bool) -> Result<Value, String> {
@@ -260,5 +290,16 @@ mod tests {
     fn refuses_invalid_payloads() {
         assert!(Snapshot::from_json(json!({"error":"Permission denied"}), json!([])).is_err());
         assert!(Snapshot::from_json(json!([]), json!([{"name":"missing id"}])).is_err());
+    }
+
+    #[test]
+    fn missing_tags_reports_only_unknown_names() {
+        let list = json!([{"name":"下一步"}, {"name":"errand"}]);
+        assert_eq!(
+            missing_tags(&list, &["errand".into(), "新标签".into(), "1".into()]),
+            vec!["新标签".to_string(), "1".to_string()]
+        );
+        assert_eq!(missing_tags(&json!([]), &["a".into()]), vec!["a".to_string()]);
+        assert_eq!(missing_tags(&json!({}), &["a".into()]), vec!["a".to_string()]);
     }
 }
