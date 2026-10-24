@@ -517,8 +517,8 @@ impl Lang {
     // —— 命令行输出 ——
     pub fn help_text(self) -> String {
         match self {
-            Lang::Zh => "omnifocus-tui — 独立的 OmniFocus 终端界面\n\n用法：omnifocus-tui [--capture | --check | --version]\n\n  --capture  快速收集到 Inbox，保存后退出\n  --check    只读验证 of 连接并显示项目与任务数量\n\n需要 macOS、OmniFocus、of CLI。可用 OMNIFOCUS_CLI 指定 of 路径。\n任意终端直接运行；可选 Herdr 集成见 integrations/herdr/。".into(),
-            Lang::En => "omnifocus-tui — a standalone terminal UI for OmniFocus\n\nUsage: omnifocus-tui [--capture | --check | --version]\n\n  --capture  quick capture to Inbox, exits after saving\n  --check    read-only check of the of connection with counts\n\nRequires macOS, OmniFocus and the of CLI. OMNIFOCUS_CLI overrides the of path.\nRuns in any terminal; optional Herdr integration lives in integrations/herdr/.".into(),
+            Lang::Zh => "omnifocus-tui — 独立的 OmniFocus 终端界面\n\n用法：omnifocus-tui [--capture | --check | --keys | --version]\n\n  --capture  快速收集到 Inbox，保存后退出\n  --check    只读验证 of 连接并显示项目与任务数量\n  --keys     按键调试：打印终端上报的按键事件\n\n需要 macOS、OmniFocus、of CLI。可用 OMNIFOCUS_CLI 指定 of 路径。\n任意终端直接运行；可选 Herdr 集成见 integrations/herdr/。".into(),
+            Lang::En => "omnifocus-tui — a standalone terminal UI for OmniFocus\n\nUsage: omnifocus-tui [--capture | --check | --keys | --version]\n\n  --capture  quick capture to Inbox, exits after saving\n  --check    read-only check of the of connection with counts\n  --keys     key debug: print key events reported by the terminal\n\nRequires macOS, OmniFocus and the of CLI. OMNIFOCUS_CLI overrides the of path.\nRuns in any terminal; optional Herdr integration lives in integrations/herdr/.".into(),
         }
     }
     pub fn unknown_arg(self) -> &'static str {
