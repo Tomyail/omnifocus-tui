@@ -53,6 +53,8 @@ struct EditState {
     /// 打开表单时的原有标签，用于判断是否需要写回。
     original_tags: Vec<String>,
     field: EditField,
+    /// 标签联想中选中的候选下标（按候选数取模）。
+    tag_index: usize,
     /// 新建任务的目标项目名；None 表示收件箱。编辑时忽略。
     project: Option<String>,
 }
@@ -131,6 +133,9 @@ pub struct App {
     status: String,
     error: bool,
     job: Option<Receiver<Outcome>>,
+    /// 后台拉取的完整标签库，用于标签联想；为空时退回任务快照中出现过的标签。
+    known_tags: Vec<String>,
+    tag_job: Option<Receiver<Vec<String>>>,
     refreshed: Instant,
     capture_only: bool,
     pub quit: bool,
@@ -166,6 +171,8 @@ impl App {
             status: String::new(),
             error: false,
             job: None,
+            known_tags: vec![],
+            tag_job: None,
             refreshed: Instant::now(),
             capture_only,
             quit: false,
@@ -350,6 +357,10 @@ impl App {
     }
 
     pub fn tick(&mut self) {
+        if let Some(names) = self.tag_job.as_ref().and_then(|job| job.try_recv().ok()) {
+            self.tag_job = None;
+            self.known_tags = names;
+        }
         if let Some(outcome) = self.job.as_ref().and_then(|job| job.try_recv().ok()) {
             self.job = None;
             self.refreshed = Instant::now();
@@ -429,7 +440,28 @@ impl App {
         }
     }
 
+    /// 打开编辑表单时后台刷新一次完整标签库，用于联想；失败时静默退回任务快照标签。
+    fn start_tag_fetch(&mut self) {
+        if self.tag_job.is_some() || self.capture_only {
+            return;
+        }
+        let backend = self.backend.clone();
+        let (sender, receiver) = mpsc::channel();
+        self.tag_job = Some(receiver);
+        thread::spawn(move || {
+            let _ = sender.send(backend.tags().unwrap_or_default());
+        });
+    }
+
+    fn tag_suggestions(&self) -> Vec<String> {
+        self.edit
+            .as_ref()
+            .map(|edit| tag_suggestions_for(&self.known_tags, &self.data.tasks, &edit.tags))
+            .unwrap_or_default()
+    }
+
     fn open_editor(&mut self, field: EditField) {
+        self.start_tag_fetch();
         if let Some(task) = self.selected() {
             self.edit = Some(EditState {
                 id: Some(task.id.clone()),
@@ -438,6 +470,7 @@ impl App {
                 tags: task.tags.join(" "),
                 original_tags: task.tags.clone(),
                 field,
+                tag_index: 0,
                 project: None,
             });
             self.mode = Mode::Edit;
@@ -498,6 +531,7 @@ impl App {
                 if matches!(self.mode, Mode::Edit) {
                     if let Some(edit) = self.edit.as_mut() {
                         edit.active_mut().push_str(&text);
+                        edit.tag_index = 0;
                     }
                 } else {
                     self.input.push_str(&text);
@@ -608,11 +642,46 @@ impl App {
                     None => {}
                 },
                 KeyCode::Tab if self.mode == Mode::Edit => {
-                    if let Some(edit) = self.edit.as_mut() {
+                    // 标签字段有联想时 Tab 先补全选中项，否则在字段间循环
+                    let in_tags = self
+                        .edit
+                        .as_ref()
+                        .is_some_and(|edit| edit.field == EditField::Tags);
+                    let suggestions = if in_tags { self.tag_suggestions() } else { vec![] };
+                    if let Some(edit) = self.edit.as_mut()
+                        && !suggestions.is_empty()
+                    {
+                        let picked =
+                            suggestions[edit.tag_index % suggestions.len()].clone();
+                        let prefix = edit
+                            .tags
+                            .rsplit_once(' ')
+                            .map(|(head, _)| format!("{head} "))
+                            .unwrap_or_default();
+                        edit.tags = format!("{prefix}{picked} ");
+                        edit.tag_index = 0;
+                    } else if let Some(edit) = self.edit.as_mut() {
                         edit.field = match edit.field {
                             EditField::Name => EditField::Note,
                             EditField::Note => EditField::Tags,
                             EditField::Tags => EditField::Name,
+                        };
+                    }
+                }
+                KeyCode::Down | KeyCode::Up if self.mode == Mode::Edit => {
+                    // ↑↓ 在标签联想候选中循环选择
+                    let in_tags = self
+                        .edit
+                        .as_ref()
+                        .is_some_and(|edit| edit.field == EditField::Tags);
+                    let len = if in_tags { self.tag_suggestions().len() } else { 0 };
+                    if len > 0
+                        && let Some(edit) = self.edit.as_mut()
+                    {
+                        edit.tag_index = if key.code == KeyCode::Down {
+                            (edit.tag_index + 1) % len
+                        } else {
+                            (edit.tag_index + len - 1) % len
                         };
                     }
                 }
@@ -624,6 +693,7 @@ impl App {
                     if matches!(self.mode, Mode::Edit) {
                         if let Some(edit) = self.edit.as_mut() {
                             edit.active_mut().pop();
+                            edit.tag_index = 0;
                         }
                     } else {
                         self.input.pop();
@@ -638,6 +708,7 @@ impl App {
                     if matches!(self.mode, Mode::Edit) {
                         if let Some(edit) = self.edit.as_mut() {
                             edit.active_mut().push(c);
+                            edit.tag_index = 0;
                         }
                     } else {
                         self.input.push(c);
@@ -761,6 +832,7 @@ impl App {
                         .map(|p| p.name.clone()),
                     _ => None,
                 };
+                self.start_tag_fetch();
                 self.edit = Some(EditState {
                     id: None,
                     name: String::new(),
@@ -768,6 +840,7 @@ impl App {
                     tags: String::new(),
                     original_tags: vec![],
                     field: EditField::Name,
+                    tag_index: 0,
                     project,
                 });
                 self.mode = Mode::Edit;
@@ -993,9 +1066,27 @@ impl App {
             footer,
         );
         if matches!(self.mode, Mode::Capture | Mode::Search | Mode::Confirm | Mode::Edit) {
+            // 联想行只在编辑表单的标签字段有候选时出现，多占一行高度
+            let tag_suggestions = if self.mode == Mode::Edit
+                && self
+                    .edit
+                    .as_ref()
+                    .is_some_and(|edit| edit.field == EditField::Tags)
+            {
+                let suggestions = self.tag_suggestions();
+                (!suggestions.is_empty()).then(|| {
+                    let index = self
+                        .edit
+                        .as_ref()
+                        .map_or(0, |edit| edit.tag_index % suggestions.len());
+                    (suggestions, index)
+                })
+            } else {
+                None
+            };
             let [_, center, _] = Layout::vertical([
                 Constraint::Fill(1),
-                Constraint::Length(8),
+                Constraint::Length(8 + u16::from(tag_suggestions.is_some())),
                 Constraint::Fill(1),
             ])
             .areas(area);
@@ -1051,10 +1142,30 @@ impl App {
                     } else {
                         " 编辑任务 ".into()
                     };
+                    let suggestion_line = tag_suggestions.as_ref().map(|(list, index)| {
+                        let items: Vec<String> = list
+                            .iter()
+                            .enumerate()
+                            .map(|(i, tag)| {
+                                if i == *index {
+                                    format!("▸{tag}")
+                                } else {
+                                    tag.clone()
+                                }
+                            })
+                            .collect();
+                        format!("联想  {}\n", items.join("  "))
+                    });
+                    let keys_hint = if tag_suggestions.is_some() {
+                        "↑↓ 选择 · Tab 补全 · Enter 保存 · Esc 取消"
+                    } else {
+                        "Tab 切换字段 · Enter 保存 · Esc 取消"
+                    };
                     (
                         title,
                         format!(
-                            "名称  {name}{name_mark}\n备注  {note}{note_mark}\n标签  {tags}{tags_mark}\n\nTab 切换字段 · Enter 保存 · Esc 取消{}",
+                            "名称  {name}{name_mark}\n备注  {note}{note_mark}\n标签  {tags}{tags_mark}\n\n{}{keys_hint}{}",
+                            suggestion_line.unwrap_or_default(),
                             if self.error || self.job.is_some() {
                                 format!("\n{}", self.status)
                             } else {
@@ -1126,6 +1237,30 @@ fn task_matches_query(task: &Task, query: &str) -> bool {
         .to_lowercase()
         .contains(query)
 }
+
+/// 标签字段的联想：匹配正在输入的词（最后一个空格后的片段，包含匹配、忽略大小写），
+/// 优先用完整标签库，未取到时退回任务快照里出现过的标签；排除已输入的标签，最多 5 个。
+fn tag_suggestions_for(known: &[String], tasks: &[Task], field: &str) -> Vec<String> {
+    let Some(word) = field.rsplit(' ').next().map(str::trim) else {
+        return vec![];
+    };
+    if word.is_empty() {
+        return vec![];
+    }
+    let mut pool: Vec<String> = if known.is_empty() {
+        tasks.iter().flat_map(|task| task.tags.iter().cloned()).collect()
+    } else {
+        known.to_vec()
+    };
+    pool.sort();
+    pool.dedup();
+    let lower = word.to_lowercase();
+    let entered: Vec<&str> = field.split_whitespace().collect();
+    pool.into_iter()
+        .filter(|tag| tag.to_lowercase().contains(&lower) && !entered.contains(&tag.as_str()))
+        .take(5)
+        .collect()
+}
 fn panel(title: &str, focused: bool) -> Block<'_> {
     Block::bordered()
         .title(title)
@@ -1180,7 +1315,7 @@ mod tests {
             json!([
                 {"id":"one","name":"中文任务","project":"工作","note":"详细说明","tags":["下一步"]},
                 {"id":"two","name":"Inbox idea","flagged":true},
-                {"id":"three","name":"生活任务","project":"生活"}
+                {"id":"three","name":"生活任务","project":"生活","tags":["shop","shopping"]}
             ]),
         )
         .unwrap();
@@ -1308,6 +1443,7 @@ mod tests {
                 tags: "下一步".into(),
                 original_tags: vec!["下一步".into()],
                 field: EditField::Note,
+                tag_index: 0,
                 project: None,
             });
             terminal.draw(|frame| app.draw(frame)).unwrap();
@@ -1590,6 +1726,63 @@ mod tests {
         app.event(press('n'));
         app.event(press('d'));
         assert_eq!(app.edit.as_ref().unwrap().tags, "errand");
+        app.event(key(KeyCode::Esc));
+        assert!(app.mode == Mode::Normal);
+        assert!(app.job.is_none());
+    }
+
+    #[test]
+    fn tag_field_suggests_and_completes() {
+        let fixture = app();
+        let tasks = &fixture.data.tasks;
+        // 联想匹配当前词：退回任务快照标签、忽略大小写、排除已输入的标签
+        assert_eq!(
+            tag_suggestions_for(&[], tasks, "下一步 sh"),
+            vec!["shop".to_string(), "shopping".to_string()]
+        );
+        assert_eq!(
+            tag_suggestions_for(&[], tasks, "SH"),
+            vec!["shop".to_string(), "shopping".to_string()]
+        );
+        assert!(tag_suggestions_for(&[], tasks, "下一步 ").is_empty());
+        assert!(tag_suggestions_for(&[], tasks, "下一步").is_empty());
+        // 完整标签库优先
+        assert_eq!(
+            tag_suggestions_for(&["自定义".into()], tasks, "自"),
+            vec!["自定义".to_string()]
+        );
+        drop(fixture);
+
+        let mut app = app();
+        let press = |c: char| {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            ))
+        };
+        let key = |code: KeyCode| {
+            Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
+        };
+
+        // 打开编辑表单，Tab 到标签字段，输入新词
+        app.event(press('e'));
+        app.event(key(KeyCode::Tab));
+        app.event(key(KeyCode::Tab));
+        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Tags);
+        app.event(press(' '));
+        app.event(press('s'));
+        app.event(press('h'));
+        // ↓ 选中第二个候选 shopping，Tab 补全
+        app.event(key(KeyCode::Down));
+        app.event(key(KeyCode::Tab));
+        assert_eq!(app.edit.as_ref().unwrap().tags, "下一步 shopping ");
+
+        // 无候选时 Tab 仍切换字段
+        app.edit.as_mut().unwrap().tags = "zz".into();
+        app.event(key(KeyCode::Tab));
+        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Name);
+
+        // Esc 取消，不写入
         app.event(key(KeyCode::Esc));
         assert!(app.mode == Mode::Normal);
         assert!(app.job.is_none());

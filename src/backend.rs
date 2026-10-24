@@ -77,19 +77,24 @@ pub struct Backend {
 
 /// 返回 wanted 中不在标签列表里的名字；列表结构异常时视为全部缺失，交给创建步骤报错。
 fn missing_tags(existing: &Value, wanted: &[String]) -> Vec<String> {
-    let names = existing
+    let names = tag_names(existing);
+    wanted
+        .iter()
+        .filter(|tag| !names.contains(*tag))
+        .cloned()
+        .collect()
+}
+
+fn tag_names(value: &Value) -> Vec<String> {
+    value
         .as_array()
         .map(|tags| {
             tags.iter()
                 .filter_map(|tag| tag.get("name").and_then(|name| name.as_str()))
-                .collect::<Vec<_>>()
+                .map(str::to_owned)
+                .collect()
         })
-        .unwrap_or_default();
-    wanted
-        .iter()
-        .filter(|tag| !names.contains(&tag.as_str()))
-        .cloned()
-        .collect()
+        .unwrap_or_default()
 }
 
 impl Backend {
@@ -253,6 +258,10 @@ impl Backend {
             self.call(&["tag", "create", "--", &tag])?;
         }
         Ok(())
+    }
+
+    pub fn tags(&self) -> Result<Vec<String>, String> {
+        Ok(tag_names(&self.call(&["tag", "list"])?))
     }
 
     pub fn flag(&self, id: &str, flagged: bool) -> Result<Value, String> {
