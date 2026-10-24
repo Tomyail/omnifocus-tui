@@ -35,7 +35,7 @@ cargo build --release
 | n | 新建任务：项目视图下进入当前项目，否则进收件箱；Tab 切换字段，Enter 保存 |
 | d | 完成选中任务，确认后写入 |
 | D | 删除选中任务（标记为已放弃），确认后写入，可在 OmniFocus 中恢复 |
-| e | 编辑选中任务的名称、备注与标签：Tab 切换字段（标签空格分隔多个，输入时有联想：↑↓ 选择、Tab 补全），Enter 保存，Esc 取消 || f | 切换旗标 |
+| e | 编辑选中任务的名称、标签与备注：Tab 切换字段（标签空格分隔多个，输入时有联想：↑↓ 选择、Tab 补全），备注支持 Shift+Enter 换行与多行粘贴，Enter 保存，Esc 取消 || f | 切换旗标 |
 | t | 打开编辑表单并直接定位到标签字段 |
 | F | 聚焦选中任务所在的项目：侧栏只保留该项目，再按 F 或 Esc 取消 |
 | y | 复制任务标题、ID、原生链接和备注，方便交给 agent |
@@ -82,7 +82,7 @@ flag = ["f"]
 | copy | y | 复制任务信息给 agent |
 | quit | q、Esc | 清除搜索、取消聚焦、关闭详情或退出 |
 
-按键写法：单个字符区分大小写（`f` 与 `F` 是两个键）；功能键写 `up` `down` `left` `right` `enter` `esc` `tab` `backtab` `pageup` `pagedown` `space`。底部帮助栏按当前配置显示各动作的第一个绑定。搜索、收集输入框和完成确认里的 Esc、Enter、退格固定不变；Ctrl+C 始终用于退出；同一按键绑定到多个动作时，上表中排在前面的动作优先。
+按键写法：单个字符区分大小写（`f` 与 `F` 是两个键）；功能键写 `up` `down` `left` `right` `enter` `esc` `tab` `backtab` `pageup` `pagedown` `space`。底部帮助栏按当前配置显示各动作的第一个绑定。搜索、收集输入框和完成确认里的 Esc、Enter、退格固定不变；Ctrl+C 始终用于退出；同一按键绑定到多个动作时，上表中排在前面的动作优先。备注换行依赖 kitty 键盘协议（kitty、WezTerm、Ghostty、iTerm2 等支持）；不支持的终端里 Shift+Enter 与 Enter 行为相同。
 
 ## 当前范围
 

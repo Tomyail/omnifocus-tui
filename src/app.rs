@@ -516,7 +516,15 @@ impl App {
     pub fn event(&mut self, event: Event) {
         if let Event::Paste(text) = event {
             if matches!(self.mode, Mode::Search | Mode::Capture | Mode::Edit) {
-                let text: String = text.chars().filter(|c| !c.is_control()).collect();
+                let multiline = self
+                    .edit
+                    .as_ref()
+                    .is_some_and(|edit| edit.field == EditField::Note);
+                let text: String = text
+                    .chars()
+                    // 备注字段保留换行；其余控件按单行处理
+                    .filter(|c| !c.is_control() || (*c == '\n' && multiline))
+                    .collect();
                 if matches!(self.mode, Mode::Edit) {
                     if let Some(edit) = self.edit.as_mut() {
                         edit.active_mut().push_str(&text);
@@ -594,7 +602,24 @@ impl App {
                         self.start(Operation::Capture(self.input.clone()));
                     }
                 }
-                KeyCode::Enter if self.mode == Mode::Edit => match self.edit.take() {
+                // 备注（最后一个字段）支持 Shift+Enter 换行；名称与标签保持单行
+                KeyCode::Enter
+                    if self.mode == Mode::Edit
+                        && key.modifiers.contains(KeyModifiers::SHIFT)
+                        && self
+                            .edit
+                            .as_ref()
+                            .is_some_and(|edit| edit.field == EditField::Note) =>
+                {
+                    if let Some(edit) = self.edit.as_mut() {
+                        edit.note.push('\n');
+                        edit.tag_index = 0;
+                    }
+                }
+                KeyCode::Enter
+                    if self.mode == Mode::Edit
+                        && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+                    match self.edit.take() {
                     Some(edit)
                         if !edit.name.trim().is_empty() && !tries_to_clear_all_tags(&edit) =>
                     {
@@ -650,9 +675,9 @@ impl App {
                         edit.tag_index = 0;
                     } else if let Some(edit) = self.edit.as_mut() {
                         edit.field = match edit.field {
-                            EditField::Name => EditField::Note,
-                            EditField::Note => EditField::Tags,
-                            EditField::Tags => EditField::Name,
+                            EditField::Name => EditField::Tags,
+                            EditField::Tags => EditField::Note,
+                            EditField::Note => EditField::Name,
                         };
                     }
                 }
@@ -673,7 +698,7 @@ impl App {
                         };
                     }
                 }
-                KeyCode::Enter => {
+                KeyCode::Enter if !matches!(self.mode, Mode::Edit) => {
                     self.mode = Mode::Normal;
                     self.sidebar_focus = false;
                 }
@@ -1047,7 +1072,16 @@ impl App {
             footer,
         );
         if matches!(self.mode, Mode::Capture | Mode::Search | Mode::Confirm | Mode::Edit) {
-            // 联想行只在编辑表单的标签字段有候选时出现，多占一行高度
+            // 联想行只在编辑表单的标签字段有候选时出现，多占一行高度；备注的额外行同理
+            let note_extra = if self.mode == Mode::Edit {
+                self.edit
+                    .as_ref()
+                    .map(|edit| edit.note.split('\n').count().saturating_sub(1))
+                    .unwrap_or(0)
+                    .min(8)
+            } else {
+                0
+            };
             let tag_suggestions = if self.mode == Mode::Edit
                 && self
                     .edit
@@ -1067,7 +1101,7 @@ impl App {
             };
             let [_, center, _] = Layout::vertical([
                 Constraint::Fill(1),
-                Constraint::Length(8 + u16::from(tag_suggestions.is_some())),
+                Constraint::Length(8 + u16::from(tag_suggestions.is_some()) + note_extra as u16),
                 Constraint::Fill(1),
             ])
             .areas(area);
@@ -1147,7 +1181,7 @@ impl App {
                     (
                         title,
                         format!(
-                            "{name_label}  {name}{name_mark}\n{note_label}  {note}{note_mark}\n{tags_label}  {tags}{tags_mark}\n\n{}{keys_hint}{}",
+                            "{name_label}  {name}{name_mark}\n{tags_label}  {tags}{tags_mark}\n{note_label}  {note}{note_mark}\n\n{}{keys_hint}{}",
                             suggestion_line.unwrap_or_default(),
                             if self.error || self.job.is_some() {
                                 format!("\n{}", self.status)
@@ -1574,14 +1608,14 @@ mod tests {
         );
         assert_eq!(app.edit.as_ref().map(|e| e.tags.as_str()), Some("下一步"));
 
-        // Tab 在三个字段间循环：名称 → 备注 → 标签 → 名称
+        // Tab 在三个字段间循环：名称 → 标签 → 备注 → 名称
         app.event(press('2'));
-        app.event(key(KeyCode::Tab));
-        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Note);
-        app.event(press('！'));
         app.event(key(KeyCode::Tab));
         assert_eq!(app.edit.as_ref().unwrap().field, EditField::Tags);
         app.event(press('x'));
+        app.event(key(KeyCode::Tab));
+        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Note);
+        app.event(press('！'));
         app.event(key(KeyCode::Tab));
         assert_eq!(app.edit.as_ref().unwrap().field, EditField::Name);
         let edit = app.edit.as_ref().unwrap();
@@ -1643,9 +1677,13 @@ mod tests {
             app.edit.as_ref().and_then(|e| e.project.as_deref()),
             Some("工作")
         );
-        // 输入名称与备注（不按 Enter，避免真实写入）
+        // 输入名称与备注（不按 Enter，避免真实写入）；两次 Tab 才到备注
         app.event(press('买'));
         app.event(press('菜'));
+        app.event(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Tab,
+            KeyModifiers::NONE,
+        )));
         app.event(Event::Key(crossterm::event::KeyEvent::new(
             KeyCode::Tab,
             KeyModifiers::NONE,
@@ -1772,9 +1810,8 @@ mod tests {
             Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
         };
 
-        // 打开编辑表单，Tab 到标签字段，输入新词
+        // 打开编辑表单，一次 Tab 即到标签字段（名称 → 标签 → 备注）
         app.event(press('e'));
-        app.event(key(KeyCode::Tab));
         app.event(key(KeyCode::Tab));
         assert_eq!(app.edit.as_ref().unwrap().field, EditField::Tags);
         app.event(press(' '));
@@ -1785,12 +1822,66 @@ mod tests {
         app.event(key(KeyCode::Tab));
         assert_eq!(app.edit.as_ref().unwrap().tags, "下一步 shopping ");
 
-        // 无候选时 Tab 仍切换字段
+        // 无候选时 Tab 仍切换字段（标签 → 备注）
         app.edit.as_mut().unwrap().tags = "zz".into();
         app.event(key(KeyCode::Tab));
-        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Name);
+        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Note);
 
         // Esc 取消，不写入
+        app.event(key(KeyCode::Esc));
+        assert!(app.mode == Mode::Normal);
+        assert!(app.job.is_none());
+    }
+
+    #[test]
+    fn note_field_supports_shift_enter_newlines_and_multiline_paste() {
+        let mut app = app();
+        let press = |c: char| {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            ))
+        };
+        let key = |code: KeyCode| {
+            Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
+        };
+        let shift_enter = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::SHIFT,
+        ));
+
+        // 名称字段按 Shift+Enter 不换行也不提交
+        app.event(press('e'));
+        app.event(shift_enter.clone());
+        assert!(app.mode == Mode::Edit);
+        assert_eq!(app.edit.as_ref().unwrap().name, "中文任务");
+
+        // 备注字段（两次 Tab 到达）支持 Shift+Enter 换行
+        app.event(key(KeyCode::Tab));
+        app.event(key(KeyCode::Tab));
+        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Note);
+        app.event(shift_enter);
+        app.event(press('第'));
+        app.event(press('二'));
+        app.event(press('行'));
+        assert_eq!(app.edit.as_ref().unwrap().note, "详细说明\n第二行");
+
+        // 粘贴多行文本：备注保留换行
+        app.event(Event::Paste("粘贴\n多行".into()));
+        assert_eq!(
+            app.edit.as_ref().unwrap().note,
+            "详细说明\n第二行粘贴\n多行"
+        );
+
+        // 多行备注可整体删除（退格逐字符）
+        while app
+            .edit
+            .as_ref()
+            .is_some_and(|edit| !edit.note.is_empty())
+        {
+            app.event(key(KeyCode::Backspace));
+        }
+        assert_eq!(app.edit.as_ref().unwrap().note, "");
         app.event(key(KeyCode::Esc));
         assert!(app.mode == Mode::Normal);
         assert!(app.job.is_none());

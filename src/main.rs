@@ -6,6 +6,7 @@ mod i18n;
 use crossterm::{
     event::{
         self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
 };
@@ -61,7 +62,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut terminal = ratatui::try_init()?;
     let result = (|| -> io::Result<()> {
-        execute!(io::stdout(), EnableMouseCapture, EnableBracketedPaste)?;
+        execute!(
+            io::stdout(),
+            EnableMouseCapture,
+            EnableBracketedPaste,
+            // 让支持 kitty 键盘协议的终端区分 Shift+Enter 与 Enter；不支持的终端会忽略
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+        )?;
         let mut app =
             app::App::new(args.first().is_some_and(|arg| arg == "--capture"), config);
         while !app.quit {
@@ -73,7 +80,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok(())
     })();
-    let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste);
+    let _ = execute!(
+        io::stdout(),
+        DisableMouseCapture,
+        DisableBracketedPaste,
+        PopKeyboardEnhancementFlags
+    );
     ratatui::restore();
     result?;
     Ok(())
