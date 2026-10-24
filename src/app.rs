@@ -1,4 +1,4 @@
-use crate::backend::{Backend, Snapshot, Task};
+use crate::backend::{Backend, Project, Snapshot, Task};
 use crate::config::{Action, Keymaps};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui::{
@@ -177,12 +177,21 @@ impl App {
             self.focused_project = None;
         }
         let focused = self.focused_project.clone();
-        self.views = vec![
+        let query = self.query.to_lowercase();
+        let count_in = |view: &View| -> usize {
+            let project_name = view_project_name(&self.data.projects, view);
+            self.data
+                .tasks
+                .iter()
+                .filter(|t| task_in_view(t, view, project_name) && task_matches_query(t, &query))
+                .count()
+        };
+        let mut views = vec![
             (View::All, "全部任务".into()),
             (View::Inbox, "收件箱".into()),
             (View::Flagged, "已标记".into()),
         ];
-        self.views.extend(
+        views.extend(
             self.data
                 .projects
                 .iter()
@@ -196,45 +205,29 @@ impl App {
                     (View::Project(p.id.clone()), label)
                 }),
         );
+        // 搜索时在侧栏每个视图旁标注匹配数，避免逐个点进去查看
+        if !query.is_empty() {
+            views = views
+                .into_iter()
+                .map(|(view, label)| {
+                    let count = count_in(&view);
+                    (view, format!("{label} · {count}"))
+                })
+                .collect();
+        }
+        self.views = views;
         if !self.views.iter().any(|(v, _)| v == &self.view) {
             self.view = View::All;
         }
         self.sidebar
             .select(self.views.iter().position(|(v, _)| v == &self.view));
-        let project = match &self.view {
-            View::Project(id) => self
-                .data
-                .projects
-                .iter()
-                .find(|p| &p.id == id)
-                .map(|p| p.name.as_str()),
-            _ => None,
-        };
-        let query = self.query.to_lowercase();
+        let project = view_project_name(&self.data.projects, &self.view);
         self.rows = self
             .data
             .tasks
             .iter()
             .enumerate()
-            .filter(|(_, t)| {
-                let matches = match &self.view {
-                    View::All => true,
-                    View::Inbox => t.project.is_none(),
-                    View::Flagged => t.flagged,
-                    View::Project(_) => t.project.as_deref() == project,
-                };
-                matches
-                    && (query.is_empty()
-                        || format!(
-                            "{} {} {} {}",
-                            t.name,
-                            t.project.as_deref().unwrap_or(""),
-                            t.tags.join(" "),
-                            t.note.as_deref().unwrap_or("")
-                        )
-                        .to_lowercase()
-                        .contains(&query))
-            })
+            .filter(|(_, t)| task_in_view(t, &self.view, project) && task_matches_query(t, &query))
             .map(|(i, _)| i)
             .collect();
         let previous = self.tasks.selected().unwrap_or(0);
@@ -1108,6 +1101,38 @@ fn merged_tags(existing: &[String], added: &[String]) -> Vec<String> {
     );
     tags
 }
+
+fn view_project_name<'a>(projects: &'a [Project], view: &View) -> Option<&'a str> {
+    match view {
+        View::Project(id) => projects
+            .iter()
+            .find(|p| &p.id == id)
+            .map(|p| p.name.as_str()),
+        _ => None,
+    }
+}
+
+fn task_in_view(task: &Task, view: &View, project_name: Option<&str>) -> bool {
+    match view {
+        View::All => true,
+        View::Inbox => task.project.is_none(),
+        View::Flagged => task.flagged,
+        View::Project(_) => task.project.as_deref() == project_name,
+    }
+}
+
+fn task_matches_query(task: &Task, query: &str) -> bool {
+    query.is_empty()
+        || format!(
+            "{} {} {} {}",
+            task.name,
+            task.project.as_deref().unwrap_or(""),
+            task.tags.join(" "),
+            task.note.as_deref().unwrap_or("")
+        )
+        .to_lowercase()
+        .contains(query)
+}
 fn panel(title: &str, focused: bool) -> Block<'_> {
     Block::bordered()
         .title(title)
@@ -1491,6 +1516,32 @@ mod tests {
         app.event(esc());
         assert!(app.mode == Mode::Normal);
         assert!(app.job.is_none());
+    }
+
+    #[test]
+    fn search_shows_match_counts_next_to_sidebar_views() {
+        let mut app = app();
+        app.query = "中文".into(); // 只匹配「中文任务」（项目 工作）
+        app.rebuild(None);
+        let label = |app: &App, view: &View| {
+            app.views
+                .iter()
+                .find(|(v, _)| v == view)
+                .map(|(_, label)| label.clone())
+                .unwrap()
+        };
+        assert_eq!(label(&app, &View::All), "全部任务 · 1");
+        assert_eq!(label(&app, &View::Inbox), "收件箱 · 0");
+        assert_eq!(label(&app, &View::Flagged), "已标记 · 0");
+        assert_eq!(label(&app, &View::Project("p".into())), "工作 · 1");
+        assert_eq!(label(&app, &View::Project("p2".into())), "生活 · 0");
+        assert_eq!(app.rows.len(), 1);
+
+        // 无搜索词时不显示计数
+        app.query.clear();
+        app.rebuild(None);
+        assert_eq!(label(&app, &View::All), "全部任务");
+        assert_eq!(label(&app, &View::Project("p".into())), "工作");
     }
 
     #[test]
