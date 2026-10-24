@@ -22,6 +22,8 @@ cargo build --release
 
 ## 操作
 
+以下为默认按键，全部可通过配置文件修改（见下方「按键配置」）：
+
 | 按键 | 操作 |
 | --- | --- |
 | Tab / h / l | 切换项目栏与任务栏 |
@@ -30,15 +32,54 @@ cargo build --release
 | PgUp / PgDn | 滚动详情 |
 | / | 搜索当前视图的标题、项目、标签和备注 |
 | a / + | 收集到 Inbox |
+| n | 新建任务：项目视图下进入当前项目，否则进收件箱；Tab 切换字段，Enter 保存 |
 | d | 完成选中任务，确认后写入 |
+| D | 删除选中任务（标记为已放弃），确认后写入，可在 OmniFocus 中恢复 |
+| e | 编辑选中任务的名称与备注：Tab 切换字段，Enter 保存，Esc 取消 |
 | f | 切换旗标 |
+| F | 聚焦选中任务所在的项目：侧栏只保留该项目，再按 F 或 Esc 取消 |
 | y | 复制任务标题、ID、原生链接和备注，方便交给 agent |
 | o | 在 OmniFocus 中打开任务 |
 | r | 刷新 |
 | p | 显示或隐藏项目栏 |
-| q / Esc | 清除搜索、关闭详情或退出 |
+| q / Esc | 清除搜索、取消聚焦、关闭详情或退出 |
 
-支持鼠标选择和滚轮。每 30 秒自动刷新；操作在后台执行。收集成功后自动切换到 Inbox、清除搜索并选中新任务。收集和旗标直接写入 OmniFocus；完成任务需要确认，父任务与重复任务遵循 OmniFocus 自身的规则。正在执行操作时，请等待结果再退出。
+支持鼠标选择和滚轮。每 30 秒自动刷新；操作在后台执行。收集成功后自动切换到 Inbox、清除搜索并选中新任务；新建任务保留在当前视图并选中新任务。收集、新建、旗标和编辑名称备注直接写入 OmniFocus；完成和删除任务需要确认（删除即标记为已放弃，可在 OmniFocus 中恢复），父任务与重复任务遵循 OmniFocus 自身的规则。正在执行操作时，请等待结果再退出。
+
+## 按键配置
+
+可选配置文件 `~/.config/omnifocus-tui/config.toml`（用 `OMNIFOCUS_TUI_CONFIG` 环境变量可指定其他路径）。文件不存在时使用内置默认值；文件存在但格式或按键非法时启动即报错退出。字段缺省保持默认，出现即整组替换，空列表表示解除绑定：
+
+```toml
+[keys]
+down = ["j", "down"]
+up = ["k", "up"]
+focus_project = ["F"]
+flag = ["f"]
+```
+
+| 动作 | 默认键 | 说明 |
+| --- | --- | --- |
+| down / up | j、↓ / k、↑ | 移动选择 |
+| sidebar / tasks | h、← / l、→ | 聚焦项目栏 / 任务栏 |
+| toggle_pane | Tab、Shift-Tab | 在两栏间切换焦点 |
+| toggle_sidebar | p | 显示或隐藏项目栏 |
+| toggle_detail | Enter | 展开或收起任务详情 |
+| detail_down / detail_up | PgDn / PgUp | 滚动详情 |
+| refresh | r | 刷新 |
+| search | / | 搜索当前视图 |
+| capture | a、+ | 收集到 Inbox |
+| create | n | 在当前项目或收件箱新建任务 |
+| flag | f | 切换旗标 |
+| focus_project | F | 聚焦选中任务所在的项目 |
+| complete | d | 完成任务（需确认） |
+| delete | D | 删除任务，标记为已放弃（需确认） |
+| edit | e | 编辑任务名称与备注 |
+| open | o | 在 OmniFocus 中打开 |
+| copy | y | 复制任务信息给 agent |
+| quit | q、Esc | 清除搜索、取消聚焦、关闭详情或退出 |
+
+按键写法：单个字符区分大小写（`f` 与 `F` 是两个键）；功能键写 `up` `down` `left` `right` `enter` `esc` `tab` `backtab` `pageup` `pagedown` `space`。底部帮助栏按当前配置显示各动作的第一个绑定。搜索、收集输入框和完成确认里的 Esc、Enter、退格固定不变；Ctrl+C 始终用于退出；同一按键绑定到多个动作时，上表中排在前面的动作优先。
 
 ## 当前范围
 

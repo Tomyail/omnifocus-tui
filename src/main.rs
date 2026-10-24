@@ -1,5 +1,6 @@
 mod app;
 mod backend;
+mod config;
 
 use crossterm::{
     event::{
@@ -58,10 +59,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err("请在交互式终端中运行；只读检查可使用 --check".into());
     }
+    let keys = config::Keymaps::load().map_err(io::Error::other)?;
     let mut terminal = ratatui::try_init()?;
     let result = (|| -> io::Result<()> {
         execute!(io::stdout(), EnableMouseCapture, EnableBracketedPaste)?;
-        let mut app = app::App::new(args.first().is_some_and(|arg| arg == "--capture"));
+        let mut app =
+            app::App::new(args.first().is_some_and(|arg| arg == "--capture"), keys);
         while !app.quit {
             app.tick();
             terminal.draw(|frame| app.draw(frame))?;

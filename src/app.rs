@@ -1,4 +1,5 @@
 use crate::backend::{Backend, Snapshot, Task};
+use crate::config::{Action, Keymaps};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui::{
     Frame,
@@ -31,28 +32,72 @@ enum Mode {
     Normal,
     Search,
     Capture,
+    Edit,
     Confirm,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum EditField {
+    Name,
+    Note,
+}
+
+struct EditState {
+    /// None 表示新建任务；Some 为编辑既有任务的 id。
+    id: Option<String>,
+    name: String,
+    note: String,
+    field: EditField,
+    /// 新建任务的目标项目名；None 表示收件箱。编辑时忽略。
+    project: Option<String>,
+}
+
+impl EditState {
+    fn active_mut(&mut self) -> &mut String {
+        match self.field {
+            EditField::Name => &mut self.name,
+            EditField::Note => &mut self.note,
+        }
+    }
 }
 
 enum Operation {
     Refresh,
     Capture(String),
+    Create {
+        name: String,
+        note: String,
+        project: Option<String>,
+    },
     Complete(String),
+    Drop(String),
+    Update { id: String, name: String, note: String },
     Flag(String, bool),
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ConfirmAction {
+    Complete,
+    Delete,
 }
 
 struct Outcome {
     snapshot: Result<Snapshot, String>,
     message: Option<String>,
     written: bool,
+    /// 收集到收件箱的任务：刷新后切到收件箱并选中。
     captured_id: Option<String>,
+    /// 新建的任务：保持当前视图，刷新后选中（不可见时回退）。
+    created_id: Option<String>,
 }
 
 pub struct App {
     backend: Backend,
     data: Snapshot,
+    keys: Keymaps,
     views: Vec<(View, String)>,
     view: View,
+    focused_project: Option<String>,
     rows: Vec<usize>,
     sidebar: ListState,
     tasks: ListState,
@@ -63,7 +108,8 @@ pub struct App {
     mode: Mode,
     input: String,
     query: String,
-    confirm: Option<Task>,
+    edit: Option<EditState>,
+    confirm: Option<(Task, ConfirmAction)>,
     status: String,
     error: bool,
     job: Option<Receiver<Outcome>>,
@@ -75,12 +121,14 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(capture_only: bool) -> Self {
+    pub fn new(capture_only: bool, keys: Keymaps) -> Self {
         let mut app = Self {
             backend: Backend::new(),
             data: Snapshot::default(),
+            keys,
             views: vec![],
             view: View::All,
+            focused_project: None,
             rows: vec![],
             sidebar: ListState::default().with_selected(Some(0)),
             tasks: ListState::default(),
@@ -95,6 +143,7 @@ impl App {
             },
             input: String::new(),
             query: String::new(),
+            edit: None,
             confirm: None,
             status: String::new(),
             error: false,
@@ -120,19 +169,31 @@ impl App {
     }
 
     fn rebuild(&mut self, selected_id: Option<String>) {
+        if let Some(id) = &self.focused_project
+            && !self.data.projects.iter().any(|p| &p.id == id)
+        {
+            self.focused_project = None;
+        }
+        let focused = self.focused_project.clone();
         self.views = vec![
             (View::All, "全部任务".into()),
             (View::Inbox, "收件箱".into()),
             (View::Flagged, "已标记".into()),
         ];
-        self.views.extend(self.data.projects.iter().map(|p| {
-            let label = if p.status == "on hold" {
-                format!("{} · 暂停", p.name)
-            } else {
-                p.name.clone()
-            };
-            (View::Project(p.id.clone()), label)
-        }));
+        self.views.extend(
+            self.data
+                .projects
+                .iter()
+                .filter(|p| focused.as_deref().is_none_or(|id| p.id == id))
+                .map(|p| {
+                    let label = if p.status == "on hold" {
+                        format!("{} · 暂停", p.name)
+                    } else {
+                        p.name.clone()
+                    };
+                    (View::Project(p.id.clone()), label)
+                }),
+        );
         if !self.views.iter().any(|(v, _)| v == &self.view) {
             self.view = View::All;
         }
@@ -200,17 +261,34 @@ impl App {
         let (sender, receiver) = mpsc::channel();
         self.job = Some(receiver);
         thread::spawn(move || {
+            // (提示消息, 刷新后要选中的任务 id, 是否切到收件箱视图)
             let result = match operation {
-                Operation::Refresh => Ok((None, None)),
+                Operation::Refresh => Ok((None, None, false)),
                 Operation::Capture(name) => backend.capture(&name).map(|task| {
                     (
                         Some("已收集到收件箱".into()),
                         task.get("id").and_then(|id| id.as_str()).map(str::to_owned),
+                        true,
                     )
                 }),
+                Operation::Create { name, note, project } => {
+                    backend.create(&name, &note, project.as_deref()).map(|task| {
+                        (
+                            Some("任务已创建".into()),
+                            task.get("id").and_then(|id| id.as_str()).map(str::to_owned),
+                            false,
+                        )
+                    })
+                }
                 Operation::Complete(id) => backend
                     .complete(&id)
-                    .map(|_| (Some("任务已完成".into()), None)),
+                    .map(|_| (Some("任务已完成".into()), None, false)),
+                Operation::Drop(id) => backend
+                    .drop(&id)
+                    .map(|_| (Some("任务已删除".into()), None, false)),
+                Operation::Update { id, name, note } => backend
+                    .update(&id, &name, &note)
+                    .map(|_| (Some("任务已更新".into()), None, false)),
                 Operation::Flag(id, flagged) => backend.flag(&id, flagged).map(|_| {
                     (
                         Some(
@@ -222,12 +300,18 @@ impl App {
                             .into(),
                         ),
                         None,
+                        false,
                     )
                 }),
             };
             let outcome = match result {
-                Ok((message, captured_id)) => {
+                Ok((message, select_id, to_inbox)) => {
                     let written = message.is_some();
+                    let (captured_id, created_id) = if to_inbox {
+                        (select_id, None)
+                    } else {
+                        (None, select_id)
+                    };
                     Outcome {
                         snapshot: if capture_only {
                             Ok(Snapshot::default())
@@ -237,6 +321,7 @@ impl App {
                         message,
                         written,
                         captured_id,
+                        created_id,
                     }
                 }
                 Err(error) => Outcome {
@@ -244,6 +329,7 @@ impl App {
                     message: None,
                     written: false,
                     captured_id: None,
+                    created_id: None,
                 },
             };
             let _ = sender.send(outcome);
@@ -262,6 +348,9 @@ impl App {
                         self.query.clear();
                         self.sidebar_focus = false;
                         self.detail_scroll = 0;
+                        Some(id)
+                    } else if let Some(id) = outcome.created_id {
+                        // 新建任务：留在当前视图并选中它；被搜索过滤掉时由 rebuild 回退
                         Some(id)
                     } else {
                         self.selected().map(|t| t.id.clone())
@@ -327,10 +416,63 @@ impl App {
         }
     }
 
+    fn focus_selected_task_project(&mut self) {
+        let Some((id, project)) = self
+            .selected()
+            .map(|task| (task.id.clone(), task.project.clone()))
+        else {
+            self.status = "请先选中一个任务，再按 F 聚焦它的项目".into();
+            self.error = false;
+            return;
+        };
+        // of 按 名称 归属任务与视图过滤，这里保持同一口径。
+        let view = match project.as_deref() {
+            Some(name) => match self.data.projects.iter().find(|p| p.name == name) {
+                Some(project) => View::Project(project.id.clone()),
+                None => {
+                    self.status = format!("未找到项目「{name}」，按 r 刷新后重试");
+                    self.error = true;
+                    return;
+                }
+            },
+            None => View::Inbox,
+        };
+        self.error = false;
+        match &view {
+            View::Project(project_id) => {
+                self.focused_project = if self.focused_project.as_deref() == Some(project_id) {
+                    self.status = "已取消聚焦，侧栏显示全部项目".into();
+                    None
+                } else {
+                    self.status = format!(
+                        "已聚焦「{}」· 侧栏只显示该项目，再按 F 或 Esc 取消",
+                        project.clone().unwrap_or_default()
+                    );
+                    Some(project_id.clone())
+                };
+            }
+            _ => {
+                self.focused_project = None;
+                self.status = "收件箱任务没有所属项目".into();
+            }
+        }
+        self.view = view;
+        self.rebuild(Some(id));
+        self.sidebar_focus = false;
+        self.detail_scroll = 0;
+    }
+
     pub fn event(&mut self, event: Event) {
         if let Event::Paste(text) = event {
-            if matches!(self.mode, Mode::Search | Mode::Capture) {
-                self.input.extend(text.chars().filter(|c| !c.is_control()));
+            if matches!(self.mode, Mode::Search | Mode::Capture | Mode::Edit) {
+                let text: String = text.chars().filter(|c| !c.is_control()).collect();
+                if matches!(self.mode, Mode::Edit) {
+                    if let Some(edit) = self.edit.as_mut() {
+                        edit.active_mut().push_str(&text);
+                    }
+                } else {
+                    self.input.push_str(&text);
+                }
                 if self.mode == Mode::Search {
                     self.query = self.input.clone();
                     self.rebuild(None);
@@ -383,7 +525,7 @@ impl App {
             }
             return;
         }
-        if matches!(self.mode, Mode::Capture | Mode::Search) {
+        if matches!(self.mode, Mode::Capture | Mode::Search | Mode::Edit) {
             match key.code {
                 KeyCode::Esc if self.job.is_none() => {
                     if self.capture_only {
@@ -392,6 +534,7 @@ impl App {
                     self.mode = Mode::Normal;
                     self.input.clear();
                     self.query.clear();
+                    self.edit = None;
                     self.rebuild(None);
                 }
                 KeyCode::Enter if self.mode == Mode::Capture => {
@@ -399,12 +542,49 @@ impl App {
                         self.start(Operation::Capture(self.input.clone()));
                     }
                 }
+                KeyCode::Enter if self.mode == Mode::Edit => match self.edit.take() {
+                    Some(edit) if !edit.name.trim().is_empty() => {
+                        let name = edit.name.trim().to_owned();
+                        let note = edit.note;
+                        match edit.id {
+                            Some(id) => self.start(Operation::Update { id, name, note }),
+                            None => {
+                                self.start(Operation::Create {
+                                    name,
+                                    note,
+                                    project: edit.project,
+                                });
+                            }
+                        }
+                    }
+                    Some(edit) => {
+                        // 名称被清空：回到编辑态并提示，不写入
+                        self.edit = Some(edit);
+                        self.status = "任务名称不能为空".into();
+                        self.error = true;
+                    }
+                    None => {}
+                },
+                KeyCode::Tab if self.mode == Mode::Edit => {
+                    if let Some(edit) = self.edit.as_mut() {
+                        edit.field = match edit.field {
+                            EditField::Name => EditField::Note,
+                            EditField::Note => EditField::Name,
+                        };
+                    }
+                }
                 KeyCode::Enter => {
                     self.mode = Mode::Normal;
                     self.sidebar_focus = false;
                 }
                 KeyCode::Backspace if self.job.is_none() => {
-                    self.input.pop();
+                    if matches!(self.mode, Mode::Edit) {
+                        if let Some(edit) = self.edit.as_mut() {
+                            edit.active_mut().pop();
+                        }
+                    } else {
+                        self.input.pop();
+                    }
                 }
                 KeyCode::Char(c)
                     if self.job.is_none()
@@ -412,7 +592,13 @@ impl App {
                             .modifiers
                             .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
                 {
-                    self.input.push(c);
+                    if matches!(self.mode, Mode::Edit) {
+                        if let Some(edit) = self.edit.as_mut() {
+                            edit.active_mut().push(c);
+                        }
+                    } else {
+                        self.input.push(c);
+                    }
                 }
                 _ => {}
             }
@@ -425,8 +611,12 @@ impl App {
         if self.mode == Mode::Confirm {
             match key.code {
                 KeyCode::Char('y') | KeyCode::Enter => {
-                    if let Some(task) = self.confirm.take() {
-                        self.start(Operation::Complete(task.id));
+                    if let Some((task, action)) = self.confirm.take() {
+                        let operation = match action {
+                            ConfirmAction::Complete => Operation::Complete(task.id),
+                            ConfirmAction::Delete => Operation::Drop(task.id),
+                        };
+                        self.start(operation);
                     }
                     self.mode = Mode::Normal;
                 }
@@ -437,59 +627,114 @@ impl App {
             }
             return;
         }
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc if self.job.is_none() => {
+        let Some(action) = self.keys.action(key.code) else {
+            return;
+        };
+        match action {
+            Action::Quit if self.job.is_none() => {
                 if !self.query.is_empty() {
                     self.query.clear();
                     self.rebuild(None);
                 } else if self.show_detail {
                     self.show_detail = false;
+                } else if self.focused_project.is_some() {
+                    self.focused_project = None;
+                    self.status = "已取消聚焦，侧栏显示全部项目".into();
+                    self.error = false;
+                    self.rebuild(None);
                 } else {
                     self.quit = true;
                 }
             }
-            KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
-            KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
-            KeyCode::Char('h') | KeyCode::Left => {
+            Action::Down => self.move_selection(1),
+            Action::Up => self.move_selection(-1),
+            Action::Sidebar => {
                 self.show_sidebar = true;
                 self.sidebar_focus = true;
             }
-            KeyCode::Char('l') | KeyCode::Right => self.sidebar_focus = false,
-            KeyCode::Tab | KeyCode::BackTab => {
+            Action::Tasks => self.sidebar_focus = false,
+            Action::TogglePane => {
                 self.sidebar_focus = !self.sidebar_focus;
                 self.show_sidebar = true;
             }
-            KeyCode::Char('p') => {
+            Action::ToggleSidebar => {
                 self.show_sidebar = !self.show_sidebar;
                 self.sidebar_focus = self.show_sidebar;
             }
-            KeyCode::Enter => {
+            Action::ToggleDetail => {
                 self.show_detail = !self.show_detail;
                 self.detail_scroll = 0;
             }
-            KeyCode::PageDown => self.detail_scroll = self.detail_scroll.saturating_add(5),
-            KeyCode::PageUp => self.detail_scroll = self.detail_scroll.saturating_sub(5),
-            KeyCode::Char('r') => self.start(Operation::Refresh),
-            KeyCode::Char('/') => {
+            Action::DetailDown => self.detail_scroll = self.detail_scroll.saturating_add(5),
+            Action::DetailUp => self.detail_scroll = self.detail_scroll.saturating_sub(5),
+            Action::Refresh => self.start(Operation::Refresh),
+            Action::Search => {
                 self.mode = Mode::Search;
                 self.input = self.query.clone();
             }
-            KeyCode::Char('a' | '+') if self.job.is_none() => {
+            Action::Capture if self.job.is_none() => {
                 self.mode = Mode::Capture;
                 self.input.clear();
             }
-            KeyCode::Char('f') if !self.sidebar_focus && self.job.is_none() => {
+            Action::Flag if !self.sidebar_focus && self.job.is_none() => {
                 if let Some(task) = self.selected() {
                     self.start(Operation::Flag(task.id.clone(), !task.flagged));
                 }
             }
-            KeyCode::Char('d') if !self.sidebar_focus && self.job.is_none() => {
-                self.confirm = self.selected().cloned();
+            Action::FocusProject if self.job.is_none() => self.focus_selected_task_project(),
+            Action::Complete if !self.sidebar_focus && self.job.is_none() => {
+                self.confirm = self
+                    .selected()
+                    .cloned()
+                    .map(|task| (task, ConfirmAction::Complete));
                 if self.confirm.is_some() {
                     self.mode = Mode::Confirm;
                 }
             }
-            KeyCode::Char('o') if !self.sidebar_focus => {
+            Action::Delete if !self.sidebar_focus && self.job.is_none() => {
+                self.confirm = self
+                    .selected()
+                    .cloned()
+                    .map(|task| (task, ConfirmAction::Delete));
+                if self.confirm.is_some() {
+                    self.mode = Mode::Confirm;
+                }
+            }
+            Action::Edit if !self.sidebar_focus && self.job.is_none() => {
+                if let Some(task) = self.selected() {
+                    self.edit = Some(EditState {
+                        id: Some(task.id.clone()),
+                        name: task.name.clone(),
+                        note: task.note.clone().unwrap_or_default(),
+                        field: EditField::Name,
+                        project: None,
+                    });
+                    self.mode = Mode::Edit;
+                    self.error = false;
+                }
+            }
+            Action::Create if self.job.is_none() => {
+                // 在当前项目视图下新建到该项目，否则进收件箱；侧栏聚焦时同样生效。
+                let project = match &self.view {
+                    View::Project(id) => self
+                        .data
+                        .projects
+                        .iter()
+                        .find(|p| &p.id == id)
+                        .map(|p| p.name.clone()),
+                    _ => None,
+                };
+                self.edit = Some(EditState {
+                    id: None,
+                    name: String::new(),
+                    note: String::new(),
+                    field: EditField::Name,
+                    project,
+                });
+                self.mode = Mode::Edit;
+                self.error = false;
+            }
+            Action::Open if !self.sidebar_focus => {
                 if let Some(task) = self.selected()
                     && let Err(error) = std::process::Command::new("open")
                         .arg(format!("omnifocus:///task/{}", task.id))
@@ -499,7 +744,7 @@ impl App {
                     self.error = true;
                 }
             }
-            KeyCode::Char('y') if !self.sidebar_focus => {
+            Action::Copy if !self.sidebar_focus => {
                 if let Some(task) = self.selected() {
                     let reference = format!(
                         "{}\nOmniFocus ID: {}\nomnifocus:///task/{}\n{}",
@@ -682,8 +927,35 @@ impl App {
                 .style(Style::default().fg(if self.error { Color::LightRed } else { MUTED })),
             status,
         );
-        frame.render_widget(Paragraph::new(" Tab 项目/任务  ↑↓/jk 移动  Enter 详情  / 搜索  a 收集  d 完成\n f 旗标  y 复制给 agent  o 打开原生  r 刷新  p 项目栏  q 退出").style(Style::default().fg(MUTED)), footer);
-        if self.mode == Mode::Capture || self.mode == Mode::Search || self.mode == Mode::Confirm {
+        let keys = &self.keys;
+        let footer_text = format!(
+            " {} 切换  {}/{} 移动  {} 详情  {} 搜索  {} 收集  {} 新建  {} 编辑\n {} 完成  {} 删除  {} 旗标  {} 聚焦  {} 复制  {} 打开  {} 刷新  {} 项目栏  {} 退出",
+            keys.first(Action::TogglePane),
+            keys.first(Action::Down),
+            keys.first(Action::Up),
+            keys.first(Action::ToggleDetail),
+            keys.first(Action::Search),
+            keys.first(Action::Capture),
+            keys.first(Action::Create),
+            keys.first(Action::Edit),
+            keys.first(Action::Complete),
+            keys.first(Action::Delete),
+            keys.first(Action::Flag),
+            keys.first(Action::FocusProject),
+            keys.first(Action::Copy),
+            keys.first(Action::Open),
+            keys.first(Action::Refresh),
+            keys.first(Action::ToggleSidebar),
+            keys.first(Action::Quit),
+        );
+        frame.render_widget(
+            Paragraph::new(footer_text).style(Style::default().fg(MUTED)),
+            footer,
+        );
+        if matches!(
+            self.mode,
+            Mode::Capture | Mode::Search | Mode::Confirm | Mode::Edit
+        ) {
             let [_, center, _] = Layout::vertical([
                 Constraint::Fill(1),
                 Constraint::Length(8),
@@ -699,7 +971,7 @@ impl App {
             frame.render_widget(Clear, dialog);
             let (title, text) = match self.mode {
                 Mode::Capture => (
-                    " 快速收集 → OmniFocus 收件箱 ",
+                    " 快速收集 → OmniFocus 收件箱 ".into(),
                     format!(
                         "{}▏\n\nEnter 保存 · Esc 取消\n{}",
                         self.input,
@@ -711,23 +983,68 @@ impl App {
                     ),
                 ),
                 Mode::Search => (
-                    " 搜索当前视图 ",
+                    " 搜索当前视图 ".into(),
                     format!(
                         "{}▏\n\n标题、项目、标签、备注 · Enter 应用 · Esc 清除",
                         self.input
                     ),
                 ),
-                _ => (
-                    " 完成任务 ",
-                    format!(
-                        "{}\n\n完成父任务会影响子任务；重复任务将按原规则生成下次。\ny / Enter 完成 · 其他键取消",
-                        self.confirm.as_ref().map(|t| t.name.as_str()).unwrap_or("")
+                Mode::Edit => {
+                    let (name, note, field, is_new, project) = self
+                        .edit
+                        .as_ref()
+                        .map(|edit| {
+                            (
+                                edit.name.as_str(),
+                                edit.note.as_str(),
+                                edit.field,
+                                edit.id.is_none(),
+                                edit.project.as_deref(),
+                            )
+                        })
+                        .unwrap_or(("", "", EditField::Name, false, None));
+                    let (name_mark, note_mark) = if field == EditField::Name {
+                        ("▏", "")
+                    } else {
+                        ("", "▏")
+                    };
+                    let title = if is_new {
+                        format!(" 新建任务 · {} ", project.unwrap_or("收件箱"))
+                    } else {
+                        " 编辑任务 ".into()
+                    };
+                    (
+                        title,
+                        format!(
+                            "名称  {name}{name_mark}\n备注  {note}{note_mark}\n\nTab 切换字段 · Enter 保存 · Esc 取消{}",
+                            if self.error || self.job.is_some() {
+                                format!("\n{}", self.status)
+                            } else {
+                                String::new()
+                            }
+                        ),
+                    )
+                }
+                _ => match self.confirm.as_ref().map(|(task, action)| (task.name.as_str(), action))
+                {
+                    Some((name, ConfirmAction::Delete)) => (
+                        " 删除任务 ".into(),
+                        format!(
+                            "{name}\n\n删除会把任务标记为已放弃并从所有视图消失，可在 OmniFocus 中恢复。\ny / Enter 删除 · 其他键取消"
+                        ),
                     ),
-                ),
+                    _ => (
+                        " 完成任务 ".into(),
+                        format!(
+                            "{}\n\n完成父任务会影响子任务；重复任务将按原规则生成下次。\ny / Enter 完成 · 其他键取消",
+                            self.confirm.as_ref().map(|(t, _)| t.name.as_str()).unwrap_or("")
+                        ),
+                    ),
+                },
             };
             frame.render_widget(
                 Paragraph::new(text)
-                    .block(panel(title, true))
+                    .block(panel(&title, true))
                     .style(Style::default().bg(BG))
                     .wrap(Wrap { trim: false }),
                 dialog,
@@ -784,20 +1101,44 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
     use serde_json::json;
 
-    fn app() -> App {
-        let mut app = App::new(true);
+    fn app_with(keys: Keymaps) -> App {
+        let mut app = App::new(true, keys);
         app.capture_only = false;
         app.mode = Mode::Normal;
         app.data = Snapshot::from_json(
-            json!([{"id":"p","name":"工作"}]),
+            json!([{"id":"p","name":"工作"}, {"id":"p2","name":"生活"}]),
             json!([
                 {"id":"one","name":"中文任务","project":"工作","note":"详细说明","tags":["下一步"]},
-                {"id":"two","name":"Inbox idea","flagged":true}
+                {"id":"two","name":"Inbox idea","flagged":true},
+                {"id":"three","name":"生活任务","project":"生活"}
             ]),
         )
         .unwrap();
         app.rebuild(None);
         app
+    }
+
+    fn app() -> App {
+        app_with(Keymaps::default())
+    }
+
+    #[test]
+    fn custom_keymap_overrides_defaults() {
+        let keys = Keymaps::from_toml("[keys]\nfocus_project = [\"g\"]").unwrap();
+        let mut app = app_with(keys);
+        let press = |c: char| {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            ))
+        };
+        app.event(press('g'));
+        assert_eq!(app.view, View::Project("p".into()));
+        assert_eq!(app.focused_project.as_deref(), Some("p"));
+        // 默认键 F 已被替换，按下不再触发聚焦（否则会切换取消）
+        app.event(press('F'));
+        assert_eq!(app.focused_project.as_deref(), Some("p"));
+        assert_eq!(app.view, View::Project("p".into()));
     }
 
     #[test]
@@ -844,6 +1185,7 @@ mod tests {
                     message: Some("已收集到收件箱".into()),
                     written: true,
                     captured_id: Some("new".into()),
+                    created_id: None,
                 })
                 .unwrap();
             app.tick();
@@ -870,6 +1212,7 @@ mod tests {
                 message: Some("已添加旗标".into()),
                 written: true,
                 captured_id: None,
+                created_id: None,
             })
             .unwrap();
         app.tick();
@@ -887,11 +1230,237 @@ mod tests {
             terminal.draw(|frame| app.draw(frame)).unwrap();
             app.mode = Mode::Capture;
             terminal.draw(|frame| app.draw(frame)).unwrap();
+            app.mode = Mode::Edit;
+            app.edit = Some(EditState {
+                id: Some("one".into()),
+                name: "中文任务".into(),
+                note: "详细说明".into(),
+                field: EditField::Note,
+                project: None,
+            });
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            app.edit = None;
             app.mode = Mode::Normal;
             app.query = "missing".into();
             app.rebuild(None);
             terminal.draw(|frame| app.draw(frame)).unwrap();
         }
+    }
+
+    #[test]
+    fn capital_f_focuses_and_filters_sidebar_to_the_tasks_project() {
+        let press = |c: char| {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            ))
+        };
+        let project_count = |app: &App| {
+            app.views
+                .iter()
+                .filter(|(v, _)| matches!(v, View::Project(_)))
+                .count()
+        };
+        let mut app = app();
+        // 按 F：切到项目视图，侧栏项目只剩被聚焦的一个
+        app.event(press('F'));
+        assert_eq!(app.view, View::Project("p".into()));
+        assert_eq!(app.focused_project.as_deref(), Some("p"));
+        assert_eq!(project_count(&app), 1);
+        assert_eq!(app.selected().unwrap().id, "one");
+        assert!(app.job.is_none());
+
+        // 收件箱任务：切到收件箱视图并取消聚焦
+        app.sidebar_focus = true;
+        app.view = View::All;
+        app.rebuild(None);
+        app.tasks.select(Some(1));
+        app.event(press('F'));
+        assert_eq!(app.view, View::Inbox);
+        assert!(app.focused_project.is_none());
+        assert_eq!(project_count(&app), 2);
+        assert!(!app.sidebar_focus);
+        assert_eq!(app.selected().unwrap().id, "two");
+
+        // 聚焦另一个项目：目标随之切换
+        app.view = View::All;
+        app.rebuild(None);
+        app.tasks.select(Some(2));
+        app.event(press('F'));
+        assert_eq!(app.view, View::Project("p2".into()));
+        assert_eq!(app.focused_project.as_deref(), Some("p2"));
+        assert_eq!(project_count(&app), 1);
+
+        // Esc 取消聚焦而不是退出
+        app.event(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+        assert!(app.focused_project.is_none());
+        assert_eq!(project_count(&app), 2);
+        assert_eq!(app.view, View::Project("p2".into()));
+        assert!(!app.quit);
+
+        // 同一项目再按 F：切换取消
+        app.tasks.select(Some(0));
+        app.event(press('F'));
+        assert_eq!(app.focused_project.as_deref(), Some("p2"));
+        app.event(press('F'));
+        assert!(app.focused_project.is_none());
+        assert_eq!(project_count(&app), 2);
+
+        // 小写 f 恢复纯旗标语义：在侧栏按不切视图、不触发写入
+        app.sidebar_focus = true;
+        app.query.clear();
+        app.rebuild(None);
+        app.event(press('f'));
+        assert_eq!(app.view, View::Project("p2".into()));
+        assert!(app.sidebar_focus);
+        assert!(app.job.is_none());
+
+        // 没有选中任务时只提示，不切视图
+        app.query = "no match".into();
+        app.rebuild(None);
+        assert!(app.selected().is_none());
+        app.event(press('F'));
+        assert_eq!(app.view, View::Project("p2".into()));
+    }
+
+    #[test]
+    fn editing_tasks_switches_fields_and_requires_a_name() {
+        let mut app = app();
+        let press = |c: char| {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            ))
+        };
+        let key = |code: KeyCode| {
+            Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
+        };
+
+        // 侧栏不触发
+        app.sidebar_focus = true;
+        app.event(press('e'));
+        assert!(app.edit.is_none());
+        app.sidebar_focus = false;
+
+        // 打开编辑：预填当前名称与备注
+        app.event(press('e'));
+        assert!(app.mode == Mode::Edit);
+        assert_eq!(
+            app.edit.as_ref().map(|e| e.name.as_str()),
+            Some("中文任务")
+        );
+        assert_eq!(
+            app.edit.as_ref().map(|e| e.note.as_str()),
+            Some("详细说明")
+        );
+
+        // Tab 切换字段后分别编辑
+        app.event(press('2'));
+        app.event(key(KeyCode::Tab));
+        app.event(press('！'));
+        let edit = app.edit.as_ref().unwrap();
+        assert_eq!(edit.name, "中文任务2");
+        assert_eq!(edit.note, "详细说明！");
+        assert_eq!(edit.field, EditField::Note);
+
+        // 清空名称后 Enter 不写入、不关弹窗
+        app.event(key(KeyCode::Tab));
+        while app
+            .edit
+            .as_ref()
+            .is_some_and(|edit| !edit.name.is_empty())
+        {
+            app.event(key(KeyCode::Backspace));
+        }
+        app.event(key(KeyCode::Enter));
+        assert!(app.mode == Mode::Edit);
+        assert!(app.job.is_none());
+
+        // Esc 取消编辑
+        app.event(key(KeyCode::Esc));
+        assert!(app.mode == Mode::Normal);
+        assert!(app.edit.is_none());
+        assert!(app.job.is_none());
+    }
+
+    #[test]
+    fn creating_tasks_targets_the_current_view() {
+        let mut app = app();
+        let press = |c: char| {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            ))
+        };
+        let esc = || {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Esc,
+                KeyModifiers::NONE,
+            ))
+        };
+
+        // 非项目视图：目标为收件箱
+        app.event(press('n'));
+        assert!(app.mode == Mode::Edit);
+        let edit = app.edit.as_ref().unwrap();
+        assert!(edit.id.is_none());
+        assert!(edit.project.is_none());
+        assert!(edit.name.is_empty());
+        app.event(esc());
+        assert!(app.edit.is_none());
+
+        // 项目视图：目标为该项目，侧栏聚焦时同样生效
+        app.view = View::Project("p".into());
+        app.rebuild(None);
+        app.sidebar_focus = true;
+        app.event(press('n'));
+        assert_eq!(
+            app.edit.as_ref().and_then(|e| e.project.as_deref()),
+            Some("工作")
+        );
+        // 输入名称与备注（不按 Enter，避免真实写入）
+        app.event(press('买'));
+        app.event(press('菜'));
+        app.event(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Tab,
+            KeyModifiers::NONE,
+        )));
+        app.event(press('快'));
+        let edit = app.edit.as_ref().unwrap();
+        assert_eq!(edit.name, "买菜");
+        assert_eq!(edit.note, "快");
+        app.event(esc());
+        assert!(app.mode == Mode::Normal);
+        assert!(app.job.is_none());
+    }
+
+    #[test]
+    fn deleting_requires_confirmation_and_never_runs_from_sidebar() {
+        let mut app = app();
+        let press = |c: char| {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            ))
+        };
+        app.sidebar_focus = true;
+        app.event(press('D'));
+        assert!(app.confirm.is_none());
+        app.sidebar_focus = false;
+        app.event(press('D'));
+        assert!(app.mode == Mode::Confirm);
+        assert!(matches!(app.confirm, Some((_, ConfirmAction::Delete))));
+        assert!(app.job.is_none());
+        app.event(Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )));
+        assert!(app.mode == Mode::Normal);
+        assert!(app.job.is_none());
+        assert!(app.confirm.is_none());
     }
 
     #[test]

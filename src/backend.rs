@@ -167,8 +167,39 @@ impl Backend {
         self.call(&["inbox", "add", "--", name.trim()])
     }
 
+    pub fn create(&self, name: &str, note: &str, project: Option<&str>) -> Result<Value, String> {
+        let mut args: Vec<String> = vec!["task".into(), "create".into()];
+        if let Some(project) = project {
+            args.push("--project".into());
+            args.push(project.into());
+        }
+        if !note.is_empty() {
+            // 用 = 形式传值，避免备注以 - 开头时被当作选项。
+            args.push(format!("--note={note}"));
+        }
+        args.push("--".into());
+        args.push(name.trim().into());
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.call(&args)
+    }
+
     pub fn complete(&self, id: &str) -> Result<Value, String> {
         self.call(&["task", "update", id, "--complete"])
+    }
+
+    pub fn drop(&self, id: &str) -> Result<Value, String> {
+        self.call(&["task", "update", id, "--drop"])
+    }
+
+    pub fn update(&self, id: &str, name: &str, note: &str) -> Result<Value, String> {
+        // 用 = 形式传值，避免名称或备注以 - 开头时被当作选项。
+        self.call(&[
+            "task",
+            "update",
+            id,
+            &format!("--name={name}"),
+            &format!("--note={note}"),
+        ])
     }
 
     pub fn flag(&self, id: &str, flagged: bool) -> Result<Value, String> {
