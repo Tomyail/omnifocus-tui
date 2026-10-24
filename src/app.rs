@@ -32,6 +32,7 @@ enum Mode {
     Normal,
     Search,
     Capture,
+    Tag,
     Edit,
     Confirm,
 }
@@ -73,6 +74,7 @@ enum Operation {
     Drop(String),
     Update { id: String, name: String, note: String },
     Flag(String, bool),
+    Tag { id: String, tags: Vec<String> },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -303,6 +305,9 @@ impl App {
                         false,
                     )
                 }),
+                Operation::Tag { id, tags } => backend
+                    .tag(&id, &tags)
+                    .map(|_| (Some("标签已更新".into()), None, false)),
             };
             let outcome = match result {
                 Ok((message, select_id, to_inbox)) => {
@@ -464,7 +469,7 @@ impl App {
 
     pub fn event(&mut self, event: Event) {
         if let Event::Paste(text) = event {
-            if matches!(self.mode, Mode::Search | Mode::Capture | Mode::Edit) {
+            if matches!(self.mode, Mode::Search | Mode::Capture | Mode::Tag | Mode::Edit) {
                 let text: String = text.chars().filter(|c| !c.is_control()).collect();
                 if matches!(self.mode, Mode::Edit) {
                     if let Some(edit) = self.edit.as_mut() {
@@ -525,7 +530,10 @@ impl App {
             }
             return;
         }
-        if matches!(self.mode, Mode::Capture | Mode::Search | Mode::Edit) {
+        if matches!(
+            self.mode,
+            Mode::Capture | Mode::Search | Mode::Tag | Mode::Edit
+        ) {
             match key.code {
                 KeyCode::Esc if self.job.is_none() => {
                     if self.capture_only {
@@ -540,6 +548,19 @@ impl App {
                 KeyCode::Enter if self.mode == Mode::Capture => {
                     if !self.input.trim().is_empty() {
                         self.start(Operation::Capture(self.input.clone()));
+                    }
+                }
+                KeyCode::Enter if self.mode == Mode::Tag => {
+                    let added: Vec<String> = self
+                        .input
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect();
+                    if let (Some(task), false) = (self.selected(), added.is_empty()) {
+                        self.start(Operation::Tag {
+                            id: task.id.clone(),
+                            tags: merged_tags(&task.tags, &added),
+                        });
                     }
                 }
                 KeyCode::Enter if self.mode == Mode::Edit => match self.edit.take() {
@@ -679,6 +700,13 @@ impl App {
             Action::Flag if !self.sidebar_focus && self.job.is_none() => {
                 if let Some(task) = self.selected() {
                     self.start(Operation::Flag(task.id.clone(), !task.flagged));
+                }
+            }
+            Action::Tag if !self.sidebar_focus && self.job.is_none() => {
+                if self.selected().is_some() {
+                    self.mode = Mode::Tag;
+                    self.input.clear();
+                    self.error = false;
                 }
             }
             Action::FocusProject if self.job.is_none() => self.focus_selected_task_project(),
@@ -929,7 +957,7 @@ impl App {
         );
         let keys = &self.keys;
         let footer_text = format!(
-            " {} 切换  {}/{} 移动  {} 详情  {} 搜索  {} 收集  {} 新建  {} 编辑\n {} 完成  {} 删除  {} 旗标  {} 聚焦  {} 复制  {} 打开  {} 刷新  {} 项目栏  {} 退出",
+            " {} 切换  {}/{} 移动  {} 详情  {} 搜索  {} 收集  {} 新建  {} 编辑  {} 标签\n {} 完成  {} 删除  {} 旗标  {} 聚焦  {} 复制  {} 打开  {} 刷新  {} 项目栏  {} 退出",
             keys.first(Action::TogglePane),
             keys.first(Action::Down),
             keys.first(Action::Up),
@@ -938,6 +966,7 @@ impl App {
             keys.first(Action::Capture),
             keys.first(Action::Create),
             keys.first(Action::Edit),
+            keys.first(Action::Tag),
             keys.first(Action::Complete),
             keys.first(Action::Delete),
             keys.first(Action::Flag),
@@ -954,7 +983,7 @@ impl App {
         );
         if matches!(
             self.mode,
-            Mode::Capture | Mode::Search | Mode::Confirm | Mode::Edit
+            Mode::Capture | Mode::Search | Mode::Tag | Mode::Confirm | Mode::Edit
         ) {
             let [_, center, _] = Layout::vertical([
                 Constraint::Fill(1),
@@ -987,6 +1016,17 @@ impl App {
                     format!(
                         "{}▏\n\n标题、项目、标签、备注 · Enter 应用 · Esc 清除",
                         self.input
+                    ),
+                ),
+                Mode::Tag => (
+                    " 添加标签 ".into(),
+                    format!(
+                        "{}▏\n\n{} · Enter 保存 · Esc 取消\n已有  {}",
+                        self.input,
+                        self.selected().map(|t| t.name.as_str()).unwrap_or(""),
+                        self.selected()
+                            .map(|t| t.tags.join(" "))
+                            .unwrap_or_default(),
                     ),
                 ),
                 Mode::Edit => {
@@ -1055,6 +1095,18 @@ impl App {
 
 fn highlight() -> Style {
     Style::default().bg(SELECTED).fg(Color::White)
+}
+
+/// 合并已有标签与新标签：保持原有顺序，去重，新标签按输入顺序追加。
+fn merged_tags(existing: &[String], added: &[String]) -> Vec<String> {
+    let mut tags = existing.to_vec();
+    tags.extend(
+        added
+            .iter()
+            .filter(|tag| !existing.contains(tag))
+            .cloned(),
+    );
+    tags
 }
 fn panel(title: &str, focused: bool) -> Block<'_> {
     Block::bordered()
@@ -1230,6 +1282,10 @@ mod tests {
             terminal.draw(|frame| app.draw(frame)).unwrap();
             app.mode = Mode::Capture;
             terminal.draw(|frame| app.draw(frame)).unwrap();
+            app.mode = Mode::Tag;
+            app.input = "errand".into();
+            terminal.draw(|frame| app.draw(frame)).unwrap();
+            app.input.clear();
             app.mode = Mode::Edit;
             app.edit = Some(EditState {
                 id: Some("one".into()),
@@ -1433,6 +1489,46 @@ mod tests {
         assert_eq!(edit.name, "买菜");
         assert_eq!(edit.note, "快");
         app.event(esc());
+        assert!(app.mode == Mode::Normal);
+        assert!(app.job.is_none());
+    }
+
+    #[test]
+    fn tag_dialog_merges_without_duplicates() {
+        let existing = vec!["下一步".to_string()];
+        assert_eq!(
+            merged_tags(&existing, &["errand".into(), "下一步".into(), "家".into()]),
+            vec!["下一步".to_string(), "errand".to_string(), "家".to_string()]
+        );
+        assert!(merged_tags(&[], &[]).is_empty());
+
+        let mut app = app();
+        let press = |c: char| {
+            Event::Key(crossterm::event::KeyEvent::new(
+                KeyCode::Char(c),
+                KeyModifiers::NONE,
+            ))
+        };
+        let key = |code: KeyCode| {
+            Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
+        };
+
+        // 侧栏不触发
+        app.sidebar_focus = true;
+        app.event(press('t'));
+        assert!(app.mode == Mode::Normal);
+        app.sidebar_focus = false;
+
+        // 打开、输入、空输入 Enter 不写入，Esc 取消
+        app.event(press('t'));
+        assert!(app.mode == Mode::Tag);
+        app.event(press('x'));
+        assert_eq!(app.input, "x");
+        app.event(key(KeyCode::Backspace));
+        app.event(key(KeyCode::Enter)); // 空输入不写入
+        assert!(app.mode == Mode::Tag);
+        assert!(app.job.is_none());
+        app.event(key(KeyCode::Esc));
         assert!(app.mode == Mode::Normal);
         assert!(app.job.is_none());
     }

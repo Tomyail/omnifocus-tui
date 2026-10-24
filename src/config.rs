@@ -19,6 +19,7 @@ pub enum Action {
     Capture,
     Create,
     Flag,
+    Tag,
     FocusProject,
     Complete,
     Delete,
@@ -44,6 +45,7 @@ pub struct Keymaps {
     pub capture: Vec<KeyCode>,
     pub create: Vec<KeyCode>,
     pub flag: Vec<KeyCode>,
+    pub tag: Vec<KeyCode>,
     pub focus_project: Vec<KeyCode>,
     pub complete: Vec<KeyCode>,
     pub delete: Vec<KeyCode>,
@@ -78,6 +80,7 @@ impl Keymaps {
             capture: Option<Vec<String>>,
             create: Option<Vec<String>>,
             flag: Option<Vec<String>>,
+            tag: Option<Vec<String>>,
             focus_project: Option<Vec<String>>,
             complete: Option<Vec<String>>,
             delete: Option<Vec<String>>,
@@ -121,6 +124,7 @@ impl Keymaps {
             capture: resolve("capture", raw.capture, &["a", "+"])?,
             create: resolve("create", raw.create, &["n"])?,
             flag: resolve("flag", raw.flag, &["f"])?,
+            tag: resolve("tag", raw.tag, &["t"])?,
             focus_project: resolve("focus_project", raw.focus_project, &["F"])?,
             complete: resolve("complete", raw.complete, &["d"])?,
             delete: resolve("delete", raw.delete, &["D"])?,
@@ -142,7 +146,7 @@ impl Keymaps {
         Self::from_toml(&text).map_err(|error| format!("{}：{error}", path.display()))
     }
 
-    fn table(&self) -> [(Action, &[KeyCode]); 21] {
+    fn table(&self) -> [(Action, &[KeyCode]); 22] {
         [
             (Action::Down, &self.down),
             (Action::Up, &self.up),
@@ -158,6 +162,7 @@ impl Keymaps {
             (Action::Capture, &self.capture),
             (Action::Create, &self.create),
             (Action::Flag, &self.flag),
+            (Action::Tag, &self.tag),
             (Action::FocusProject, &self.focus_project),
             (Action::Complete, &self.complete),
             (Action::Delete, &self.delete),
@@ -255,6 +260,7 @@ mod tests {
         assert_eq!(maps.focus_project, vec![Char('g')]);
         assert_eq!(maps.quit, vec![Char('Q'), Esc]);
         assert_eq!(maps.flag, vec![Char('f')]);
+        assert_eq!(maps.tag, vec![Char('t')]);
         assert_eq!(maps.delete, vec![Char('D')]);
         assert_eq!(maps.edit, vec![Char('e')]);
         assert_eq!(maps.create, vec![Char('n')]);

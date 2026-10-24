@@ -210,6 +210,14 @@ impl Backend {
             if flagged { "--flag" } else { "--unflag" },
         ])
     }
+
+    /// of 的 --tag 是整组替换；调用方需传入合并后的完整标签列表。
+    pub fn tag(&self, id: &str, tags: &[String]) -> Result<Value, String> {
+        let mut args: Vec<String> = vec!["task".into(), "update".into(), id.into(), "--tag".into()];
+        args.extend(tags.iter().cloned());
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.call(&args)
+    }
 }
 
 #[cfg(test)]
