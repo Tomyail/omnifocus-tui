@@ -602,10 +602,14 @@ impl App {
                         self.start(Operation::Capture(self.input.clone()));
                     }
                 }
-                // 备注（最后一个字段）支持 Shift+Enter 换行；名称与标签保持单行
+                // 备注（最后一个字段）支持 Shift+Enter 换行；macOS 部分输入法会把
+                // Shift+Enter 改报为 Option+Enter（ESC \r），因此两种修饰键都视为换行。
+                // 名称与标签保持单行：带修饰的 Enter 既不换行也不提交。
                 KeyCode::Enter
                     if self.mode == Mode::Edit
-                        && key.modifiers.contains(KeyModifiers::SHIFT)
+                        && key
+                            .modifiers
+                            .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT)
                         && self
                             .edit
                             .as_ref()
@@ -618,7 +622,9 @@ impl App {
                 }
                 KeyCode::Enter
                     if self.mode == Mode::Edit
-                        && !key.modifiers.contains(KeyModifiers::SHIFT) =>
+                        && !key
+                            .modifiers
+                            .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
                     match self.edit.take() {
                     Some(edit)
                         if !edit.name.trim().is_empty() && !tries_to_clear_all_tags(&edit) =>
@@ -1849,10 +1855,16 @@ mod tests {
             KeyCode::Enter,
             KeyModifiers::SHIFT,
         ));
+        // macOS 部分输入法把 Shift+Enter 上报为 Option+Enter，同样视为换行
+        let alt_enter = Event::Key(crossterm::event::KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::ALT,
+        ));
 
-        // 名称字段按 Shift+Enter 不换行也不提交
+        // 名称字段按 Shift+Enter / Option+Enter 不换行也不提交
         app.event(press('e'));
         app.event(shift_enter.clone());
+        app.event(alt_enter.clone());
         assert!(app.mode == Mode::Edit);
         assert_eq!(app.edit.as_ref().unwrap().name, "中文任务");
 
@@ -1866,11 +1878,16 @@ mod tests {
         app.event(press('行'));
         assert_eq!(app.edit.as_ref().unwrap().note, "详细说明\n第二行");
 
+        // Option+Enter 同样换行
+        app.event(alt_enter);
+        app.event(press('三'));
+        assert_eq!(app.edit.as_ref().unwrap().note, "详细说明\n第二行\n三");
+
         // 粘贴多行文本：备注保留换行
         app.event(Event::Paste("粘贴\n多行".into()));
         assert_eq!(
             app.edit.as_ref().unwrap().note,
-            "详细说明\n第二行粘贴\n多行"
+            "详细说明\n第二行\n三粘贴\n多行"
         );
 
         // 多行备注可整体删除（退格逐字符）
