@@ -51,6 +51,8 @@ cargo build --release
 可选配置文件 `~/.config/omnifocus-tui/config.toml`（用 `OMNIFOCUS_TUI_CONFIG` 环境变量可指定其他路径）。文件不存在时使用内置默认值；文件存在但格式或按键非法时启动即报错退出。字段缺省保持默认，出现即整组替换，空列表表示解除绑定：
 
 ```toml
+language = "zh"   # 界面语言：zh（默认）或 en；未配置时按系统 LANG 检测
+
 [keys]
 down = ["j", "down"]
 up = ["k", "up"]

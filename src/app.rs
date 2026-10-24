@@ -1,5 +1,6 @@
 use crate::backend::{Backend, Project, Snapshot, Task};
-use crate::config::{Action, Keymaps};
+use crate::config::{Action, Config, Keymaps};
+use crate::i18n::Lang;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui::{
     Frame,
@@ -114,6 +115,7 @@ struct Outcome {
 pub struct App {
     backend: Backend,
     data: Snapshot,
+    lang: Lang,
     keys: Keymaps,
     views: Vec<(View, String)>,
     view: View,
@@ -144,11 +146,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(capture_only: bool, keys: Keymaps) -> Self {
+    pub fn new(capture_only: bool, config: Config) -> Self {
         let mut app = Self {
             backend: Backend::new(),
             data: Snapshot::default(),
-            keys,
+            lang: config.language,
+            keys: config.keys,
             views: vec![],
             view: View::All,
             focused_project: None,
@@ -210,9 +213,9 @@ impl App {
                 .count()
         };
         let mut views = vec![
-            (View::All, "全部任务".into()),
-            (View::Inbox, "收件箱".into()),
-            (View::Flagged, "已标记".into()),
+            (View::All, self.lang.all_tasks().into()),
+            (View::Inbox, self.lang.inbox().into()),
+            (View::Flagged, self.lang.flagged_view().into()),
         ];
         views.extend(
             self.data
@@ -221,7 +224,7 @@ impl App {
                 .filter(|p| focused.as_deref().is_none_or(|id| p.id == id))
                 .map(|p| {
                     let label = if p.status == "on hold" {
-                        format!("{} · 暂停", p.name)
+                        format!("{} · {}", p.name, self.lang.on_hold())
                     } else {
                         p.name.clone()
                     };
@@ -269,9 +272,10 @@ impl App {
             return;
         }
         let backend = self.backend.clone();
+        let lang = self.lang;
         self.status = match &operation {
-            Operation::Refresh => "正在读取 OmniFocus…",
-            _ => "正在写入 OmniFocus…",
+            Operation::Refresh => lang.reading(),
+            _ => lang.writing(),
         }
         .into();
         self.error = false;
@@ -284,7 +288,7 @@ impl App {
                 Operation::Refresh => Ok((None, None, false)),
                 Operation::Capture(name) => backend.capture(&name).map(|task| {
                     (
-                        Some("已收集到收件箱".into()),
+                        Some(lang.captured().into()),
                         task.get("id").and_then(|id| id.as_str()).map(str::to_owned),
                         true,
                     )
@@ -294,7 +298,7 @@ impl App {
                         .create(&name, &note, project.as_deref(), &tags)
                         .map(|task| {
                             (
-                                Some("任务已创建".into()),
+                                Some(lang.created().into()),
                                 task.get("id").and_then(|id| id.as_str()).map(str::to_owned),
                                 false,
                             )
@@ -302,26 +306,15 @@ impl App {
                 }
                 Operation::Complete(id) => backend
                     .complete(&id)
-                    .map(|_| (Some("任务已完成".into()), None, false)),
+                    .map(|_| (Some(lang.completed().into()), None, false)),
                 Operation::Drop(id) => backend
                     .drop(&id)
-                    .map(|_| (Some("任务已删除".into()), None, false)),
+                    .map(|_| (Some(lang.deleted().into()), None, false)),
                 Operation::Update { id, name, note, tags } => backend
                     .update(&id, &name, &note, tags.as_deref())
-                    .map(|_| (Some("任务已更新".into()), None, false)),
+                    .map(|_| (Some(lang.updated().into()), None, false)),
                 Operation::Flag(id, flagged) => backend.flag(&id, flagged).map(|_| {
-                    (
-                        Some(
-                            if flagged {
-                                "已添加旗标"
-                            } else {
-                                "已移除旗标"
-                            }
-                            .into(),
-                        ),
-                        None,
-                        false,
-                    )
+                    (Some(lang.flag_set(flagged).into()), None, false)
                 }),
             };
             let outcome = match result {
@@ -382,11 +375,8 @@ impl App {
                     self.data = snapshot;
                     self.rebuild(selected);
                     self.status = outcome.message.unwrap_or_else(|| {
-                        format!(
-                            "已同步 · {} 个项目 · {} 个任务",
-                            self.data.projects.len(),
-                            self.data.tasks.len()
-                        )
+                        self.lang
+                            .synced(self.data.projects.len(), self.data.tasks.len())
                     });
                 }
                 Err(error) => {
@@ -483,7 +473,7 @@ impl App {
             .selected()
             .map(|task| (task.id.clone(), task.project.clone()))
         else {
-            self.status = "请先选中一个任务，再按 F 聚焦它的项目".into();
+            self.status = self.lang.no_task_for_focus();
             self.error = false;
             return;
         };
@@ -492,7 +482,7 @@ impl App {
             Some(name) => match self.data.projects.iter().find(|p| p.name == name) {
                 Some(project) => View::Project(project.id.clone()),
                 None => {
-                    self.status = format!("未找到项目「{name}」，按 r 刷新后重试");
+                    self.status = self.lang.project_not_found(name);
                     self.error = true;
                     return;
                 }
@@ -503,19 +493,18 @@ impl App {
         match &view {
             View::Project(project_id) => {
                 self.focused_project = if self.focused_project.as_deref() == Some(project_id) {
-                    self.status = "已取消聚焦，侧栏显示全部项目".into();
+                    self.status = self.lang.focus_cleared().into();
                     None
                 } else {
-                    self.status = format!(
-                        "已聚焦「{}」· 侧栏只显示该项目，再按 F 或 Esc 取消",
-                        project.clone().unwrap_or_default()
-                    );
+                    self.status = self
+                        .lang
+                        .focused(project.clone().unwrap_or_default().as_str());
                     Some(project_id.clone())
                 };
             }
             _ => {
                 self.focused_project = None;
-                self.status = "收件箱任务没有所属项目".into();
+                self.status = self.lang.inbox_no_project().into();
             }
         }
         self.view = view;
@@ -632,10 +621,9 @@ impl App {
                         // 名称被清空或试图清空全部标签：回到编辑态并提示，不写入
                         self.edit = Some(edit);
                         if self.edit.as_ref().is_some_and(tries_to_clear_all_tags) {
-                            self.status =
-                                "暂不支持清空全部标签（CLI 限制），请至少保留一个".into();
+                            self.status = self.lang.cannot_clear_tags().into();
                         } else {
-                            self.status = "任务名称不能为空".into();
+                            self.status = self.lang.name_empty().into();
                         }
                         self.error = true;
                     }
@@ -753,7 +741,7 @@ impl App {
                     self.show_detail = false;
                 } else if self.focused_project.is_some() {
                     self.focused_project = None;
-                    self.status = "已取消聚焦，侧栏显示全部项目".into();
+                    self.status = self.lang.focus_cleared().into();
                     self.error = false;
                     self.rebuild(None);
                 } else {
@@ -865,10 +853,8 @@ impl App {
                         task.id,
                         task.note.as_deref().unwrap_or("")
                     );
-                    let result = copy(&reference);
-                    self.status = result
-                        .err()
-                        .unwrap_or_else(|| "已复制任务与 ID，可粘贴给 agent".into());
+                    let result = copy(&reference, self.lang);
+                    self.status = result.err().unwrap_or_else(|| self.lang.copied().into());
                 }
             }
             _ => {}
@@ -882,7 +868,7 @@ impl App {
             area,
         );
         if area.width < 35 || area.height < 10 {
-            frame.render_widget(Paragraph::new("窗口太小，请扩大到至少 35×10"), area);
+            frame.render_widget(Paragraph::new(self.lang.too_small()), area);
             return;
         }
         let [header, body, status, footer] = Layout::vertical([
@@ -900,10 +886,10 @@ impl App {
                 ),
                 Span::styled(
                     format!(
-                        "{} 个任务  {}",
-                        self.rows.len(),
+                        " {}  {}",
+                        self.lang.task_count(self.rows.len()),
                         if self.job.is_some() {
-                            "· 同步中"
+                            self.lang.syncing()
                         } else {
                             ""
                         }
@@ -944,7 +930,7 @@ impl App {
                 .collect();
             frame.render_stateful_widget(
                 List::new(items)
-                    .block(panel(" 项目 / 视图 ", self.sidebar_focus))
+                    .block(panel(self.lang.projects_views_title(), self.sidebar_focus))
                     .highlight_style(highlight())
                     .highlight_symbol("› "),
                 side,
@@ -972,26 +958,22 @@ impl App {
             .iter()
             .find(|(v, _)| v == &self.view)
             .map(|(_, label)| label.as_str())
-            .unwrap_or("任务");
+            .unwrap_or(self.lang.tasks_title());
         let items: Vec<ListItem> = self
             .rows
             .iter()
             .map(|i| {
                 let task = &self.data.tasks[*i];
-                let mut metadata = task.project.clone().unwrap_or_else(|| "收件箱".into());
-                if !task.tags.is_empty() {
-                    metadata.push_str(&format!(" · #{}", task.tags.join(" #")));
-                }
-                if let Some(due) = &task.due {
-                    metadata.push_str(&format!(" · 截止 {}", date(due)));
-                }
                 ListItem::new(Text::from(vec![
                     Line::from(format!(
                         "{} {}",
                         if task.flagged { "⚑" } else { "○" },
                         task.name
                     )),
-                    Line::styled(format!("  {metadata}"), Style::default().fg(MUTED)),
+                    Line::styled(
+                        format!("  {}", self.lang.task_row_meta(task)),
+                        Style::default().fg(MUTED),
+                    ),
                 ]))
             })
             .collect();
@@ -1006,23 +988,22 @@ impl App {
         if self.rows.is_empty() {
             frame.render_widget(
                 Paragraph::new(if self.job.is_some() {
-                    "正在读取…"
+                    self.lang.loading()
                 } else {
-                    "没有匹配的任务"
+                    self.lang.no_matches()
                 })
                 .style(Style::default().fg(MUTED)),
                 task_area.inner(ratatui::layout::Margin::new(2, 2)),
             );
         }
         if let Some(detail) = detail_area {
-            let text = self.selected().map(|t| {
-                format!("{}\n\n项目  {}\n标签  {}\n截止  {}\n推迟  {}\n计划  {}\n预估  {}\nID    {}\n\n{}", t.name, t.project.as_deref().unwrap_or("收件箱"), t.tags.join(" · "),
-                    t.due.as_deref().map(date).unwrap_or_else(|| "—".into()), t.defer.as_deref().map(date).unwrap_or_else(|| "—".into()),
-                    t.planned.as_deref().map(date).unwrap_or_else(|| "—".into()), t.estimated_minutes.map(|m| format!("{m} 分钟")).unwrap_or_else(|| "—".into()), t.id, t.note.as_deref().unwrap_or("暂无备注"))
-            }).unwrap_or_else(|| "选择一个任务".into());
+            let text = self
+                .selected()
+                .map(|t| self.lang.task_detail(t))
+                .unwrap_or_else(|| self.lang.select_task().into());
             frame.render_widget(
                 Paragraph::new(text)
-                    .block(panel(" 详情 · PgUp/PgDn 滚动 ", false))
+                    .block(panel(self.lang.detail_title(), false))
                     .wrap(Wrap { trim: false })
                     .scroll((self.detail_scroll, 0)),
                 detail,
@@ -1031,7 +1012,7 @@ impl App {
         let status_text = if self.query.is_empty() {
             self.status.clone()
         } else {
-            format!("搜索：{} · {}", self.query, self.status)
+            format!("{}{} · {}", self.lang.search_prefix(), self.query, self.status)
         };
         frame.render_widget(
             Paragraph::new(status_text)
@@ -1040,26 +1021,26 @@ impl App {
             status,
         );
         let keys = &self.keys;
+        let lang = self.lang;
         let footer_text = format!(
-            " {} 切换  {}/{} 移动  {} 详情  {} 搜索  {} 收集  {} 新建  {} 编辑  {} 标签\n {} 完成  {} 删除  {} 旗标  {} 聚焦  {} 复制  {} 打开  {} 刷新  {} 项目栏  {} 退出",
-            keys.first(Action::TogglePane),
-            keys.first(Action::Down),
-            keys.first(Action::Up),
-            keys.first(Action::ToggleDetail),
-            keys.first(Action::Search),
-            keys.first(Action::Capture),
-            keys.first(Action::Create),
-            keys.first(Action::Edit),
-            keys.first(Action::Tag),
-            keys.first(Action::Complete),
-            keys.first(Action::Delete),
-            keys.first(Action::Flag),
-            keys.first(Action::FocusProject),
-            keys.first(Action::Copy),
-            keys.first(Action::Open),
-            keys.first(Action::Refresh),
-            keys.first(Action::ToggleSidebar),
-            keys.first(Action::Quit),
+            " {} {}  {}/{} {}  {} {}  {} {}  {} {}  {} {}  {} {}  {} {}\n {} {}  {} {}  {} {}  {} {}  {} {}  {} {}  {} {}  {} {}  {} {}",
+            keys.first(Action::TogglePane), lang.h_panes(),
+            keys.first(Action::Down), keys.first(Action::Up), lang.h_move(),
+            keys.first(Action::ToggleDetail), lang.h_detail(),
+            keys.first(Action::Search), lang.h_search(),
+            keys.first(Action::Capture), lang.h_capture(),
+            keys.first(Action::Create), lang.h_new(),
+            keys.first(Action::Edit), lang.h_edit(),
+            keys.first(Action::Tag), lang.h_tags(),
+            keys.first(Action::Complete), lang.h_complete(),
+            keys.first(Action::Delete), lang.h_delete(),
+            keys.first(Action::Flag), lang.h_flag(),
+            keys.first(Action::FocusProject), lang.h_focus(),
+            keys.first(Action::Copy), lang.h_copy(),
+            keys.first(Action::Open), lang.h_open(),
+            keys.first(Action::Refresh), lang.h_refresh(),
+            keys.first(Action::ToggleSidebar), lang.h_sidebar(),
+            keys.first(Action::Quit), lang.h_quit(),
         );
         frame.render_widget(
             Paragraph::new(footer_text).style(Style::default().fg(MUTED)),
@@ -1099,10 +1080,11 @@ impl App {
             frame.render_widget(Clear, dialog);
             let (title, text) = match self.mode {
                 Mode::Capture => (
-                    " 快速收集 → OmniFocus 收件箱 ".into(),
+                    self.lang.capture_title().into(),
                     format!(
-                        "{}▏\n\nEnter 保存 · Esc 取消\n{}",
+                        "{}▏\n\n{}\n{}",
                         self.input,
+                        self.lang.capture_hint(),
                         if self.error || self.job.is_some() {
                             &self.status
                         } else {
@@ -1111,11 +1093,8 @@ impl App {
                     ),
                 ),
                 Mode::Search => (
-                    " 搜索当前视图 ".into(),
-                    format!(
-                        "{}▏\n\n标题、项目、标签、备注 · Enter 应用 · Esc 清除",
-                        self.input
-                    ),
+                    self.lang.search_title().into(),
+                    format!("{}▏\n\n{}", self.input, self.lang.search_hint()),
                 ),
                 Mode::Edit => {
                     let (name, note, tags, field, is_new, project) = self
@@ -1138,10 +1117,14 @@ impl App {
                         EditField::Tags => ("", "", "▏"),
                     };
                     let title = if is_new {
-                        format!(" 新建任务 · {} ", project.unwrap_or("收件箱"))
+                        self.lang
+                            .new_task_title(project.unwrap_or_else(|| self.lang.inbox()))
                     } else {
-                        " 编辑任务 ".into()
+                        self.lang.edit_title().into()
                     };
+                    let name_label = self.lang.field_name();
+                    let note_label = self.lang.field_note();
+                    let tags_label = self.lang.field_tags();
                     let suggestion_line = tag_suggestions.as_ref().map(|(list, index)| {
                         let items: Vec<String> = list
                             .iter()
@@ -1154,17 +1137,17 @@ impl App {
                                 }
                             })
                             .collect();
-                        format!("联想  {}\n", items.join("  "))
+                        format!("{}  {}\n", self.lang.suggest_label(), items.join("  "))
                     });
                     let keys_hint = if tag_suggestions.is_some() {
-                        "↑↓ 选择 · Tab 补全 · Enter 保存 · Esc 取消"
+                        self.lang.keys_suggest_hint()
                     } else {
-                        "Tab 切换字段 · Enter 保存 · Esc 取消"
+                        self.lang.keys_fields_hint()
                     };
                     (
                         title,
                         format!(
-                            "名称  {name}{name_mark}\n备注  {note}{note_mark}\n标签  {tags}{tags_mark}\n\n{}{keys_hint}{}",
+                            "{name_label}  {name}{name_mark}\n{note_label}  {note}{note_mark}\n{tags_label}  {tags}{tags_mark}\n\n{}{keys_hint}{}",
                             suggestion_line.unwrap_or_default(),
                             if self.error || self.job.is_some() {
                                 format!("\n{}", self.status)
@@ -1176,17 +1159,16 @@ impl App {
                 }
                 _ => match self.confirm.as_ref().map(|(task, action)| (task.name.as_str(), action))
                 {
-                    Some((name, ConfirmAction::Delete)) => (
-                        " 删除任务 ".into(),
-                        format!(
-                            "{name}\n\n删除会把任务标记为已放弃并从所有视图消失，可在 OmniFocus 中恢复。\ny / Enter 删除 · 其他键取消"
-                        ),
-                    ),
+                    Some((name, ConfirmAction::Delete)) => {
+                        (self.lang.delete_title().into(), self.lang.delete_body(name))
+                    }
                     _ => (
-                        " 完成任务 ".into(),
-                        format!(
-                            "{}\n\n完成父任务会影响子任务；重复任务将按原规则生成下次。\ny / Enter 完成 · 其他键取消",
-                            self.confirm.as_ref().map(|(t, _)| t.name.as_str()).unwrap_or("")
+                        self.lang.complete_title().into(),
+                        self.lang.complete_body(
+                            self.confirm
+                                .as_ref()
+                                .map(|(task, _)| task.name.as_str())
+                                .unwrap_or(""),
                         ),
                     ),
                 },
@@ -1270,17 +1252,18 @@ fn panel(title: &str, focused: bool) -> Block<'_> {
             Color::Rgb(67, 71, 92)
         }))
 }
-fn date(value: &str) -> String {
-    // Preserve the source timestamp and its UTC marker instead of guessing the user's timezone.
-    value
-        .replace('T', " ")
-        .replace(".000Z", " UTC")
-        .replace('Z', " UTC")
-}
-fn copy(text: &str) -> Result<(), String> {
+fn copy(text: &str, lang: Lang) -> Result<(), String> {
     use std::{
         io::Write,
         process::{Command, Stdio},
+    };
+    let clipboard_unavailable = || match lang {
+        Lang::Zh => "无法打开剪贴板",
+        Lang::En => "Cannot open clipboard",
+    };
+    let copy_failed = || match lang {
+        Lang::Zh => "复制失败",
+        Lang::En => "Copy failed",
     };
     let mut child = Command::new("pbcopy")
         .stdin(Stdio::piped())
@@ -1289,14 +1272,14 @@ fn copy(text: &str) -> Result<(), String> {
     child
         .stdin
         .take()
-        .ok_or("无法打开剪贴板")?
+        .ok_or_else(clipboard_unavailable)?
         .write_all(text.as_bytes())
         .map_err(|e| e.to_string())?;
     let status = child.wait().map_err(|e| e.to_string())?;
     if status.success() {
         Ok(())
     } else {
-        Err("复制失败".into())
+        Err(copy_failed().into())
     }
 }
 
@@ -1306,8 +1289,8 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
     use serde_json::json;
 
-    fn app_with(keys: Keymaps) -> App {
-        let mut app = App::new(true, keys);
+    fn app_with(config: Config) -> App {
+        let mut app = App::new(true, config);
         app.capture_only = false;
         app.mode = Mode::Normal;
         app.data = Snapshot::from_json(
@@ -1324,13 +1307,38 @@ mod tests {
     }
 
     fn app() -> App {
-        app_with(Keymaps::default())
+        app_with(Config::default())
+    }
+
+    #[test]
+    fn english_lang_switches_ui_labels() {
+        let config = Config {
+            language: Lang::En,
+            ..Config::default()
+        };
+        let mut app = app_with(config);
+        let label = |app: &App, view: &View| {
+            app.views
+                .iter()
+                .find(|(v, _)| v == view)
+                .map(|(_, label)| label.clone())
+                .unwrap()
+        };
+        assert_eq!(label(&app, &View::All), "All Tasks");
+        assert_eq!(label(&app, &View::Inbox), "Inbox");
+        assert_eq!(label(&app, &View::Flagged), "Flagged");
+        assert_eq!(app.data.tasks[0].name, "中文任务");
+        let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
+        terminal.draw(|frame| app.draw(frame)).unwrap();
     }
 
     #[test]
     fn custom_keymap_overrides_defaults() {
         let keys = Keymaps::from_toml("[keys]\nfocus_project = [\"g\"]").unwrap();
-        let mut app = app_with(keys);
+        let mut app = app_with(Config {
+            keys,
+            ..Config::default()
+        });
         let press = |c: char| {
             Event::Key(crossterm::event::KeyEvent::new(
                 KeyCode::Char(c),
