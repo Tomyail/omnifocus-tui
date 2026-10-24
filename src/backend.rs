@@ -167,7 +167,13 @@ impl Backend {
         self.call(&["inbox", "add", "--", name.trim()])
     }
 
-    pub fn create(&self, name: &str, note: &str, project: Option<&str>) -> Result<Value, String> {
+    pub fn create(
+        &self,
+        name: &str,
+        note: &str,
+        project: Option<&str>,
+        tags: &[String],
+    ) -> Result<Value, String> {
         let mut args: Vec<String> = vec!["task".into(), "create".into()];
         if let Some(project) = project {
             args.push("--project".into());
@@ -176,6 +182,10 @@ impl Backend {
         if !note.is_empty() {
             // 用 = 形式传值，避免备注以 - 开头时被当作选项。
             args.push(format!("--note={note}"));
+        }
+        if !tags.is_empty() {
+            args.push("--tag".into());
+            args.extend(tags.iter().cloned());
         }
         args.push("--".into());
         args.push(name.trim().into());
@@ -191,15 +201,28 @@ impl Backend {
         self.call(&["task", "update", id, "--drop"])
     }
 
-    pub fn update(&self, id: &str, name: &str, note: &str) -> Result<Value, String> {
+    pub fn update(
+        &self,
+        id: &str,
+        name: &str,
+        note: &str,
+        tags: Option<&[String]>,
+    ) -> Result<Value, String> {
         // 用 = 形式传值，避免名称或备注以 - 开头时被当作选项。
-        self.call(&[
-            "task",
-            "update",
-            id,
-            &format!("--name={name}"),
-            &format!("--note={note}"),
-        ])
+        let mut args: Vec<String> = vec![
+            "task".into(),
+            "update".into(),
+            id.into(),
+            format!("--name={name}"),
+            format!("--note={note}"),
+        ];
+        // of 的 --tag 至少要一个值且为整组替换；None 表示不修改标签。
+        if let Some(tags) = tags.filter(|tags| !tags.is_empty()) {
+            args.push("--tag".into());
+            args.extend(tags.iter().cloned());
+        }
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.call(&args)
     }
 
     pub fn flag(&self, id: &str, flagged: bool) -> Result<Value, String> {
@@ -209,14 +232,6 @@ impl Backend {
             id,
             if flagged { "--flag" } else { "--unflag" },
         ])
-    }
-
-    /// of 的 --tag 是整组替换；调用方需传入合并后的完整标签列表。
-    pub fn tag(&self, id: &str, tags: &[String]) -> Result<Value, String> {
-        let mut args: Vec<String> = vec!["task".into(), "update".into(), id.into(), "--tag".into()];
-        args.extend(tags.iter().cloned());
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        self.call(&args)
     }
 }
 

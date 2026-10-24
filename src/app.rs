@@ -32,7 +32,6 @@ enum Mode {
     Normal,
     Search,
     Capture,
-    Tag,
     Edit,
     Confirm,
 }
@@ -41,6 +40,7 @@ enum Mode {
 enum EditField {
     Name,
     Note,
+    Tags,
 }
 
 struct EditState {
@@ -48,6 +48,10 @@ struct EditState {
     id: Option<String>,
     name: String,
     note: String,
+    /// 标签字段：空格分隔的完整标签列表。
+    tags: String,
+    /// 打开表单时的原有标签，用于判断是否需要写回。
+    original_tags: Vec<String>,
     field: EditField,
     /// 新建任务的目标项目名；None 表示收件箱。编辑时忽略。
     project: Option<String>,
@@ -58,8 +62,14 @@ impl EditState {
         match self.field {
             EditField::Name => &mut self.name,
             EditField::Note => &mut self.note,
+            EditField::Tags => &mut self.tags,
         }
     }
+}
+
+/// CLI 的 --tag 至少要一个值，无法表达「清空全部标签」。
+fn tries_to_clear_all_tags(edit: &EditState) -> bool {
+    edit.tags.split_whitespace().next().is_none() && !edit.original_tags.is_empty()
 }
 
 enum Operation {
@@ -69,12 +79,18 @@ enum Operation {
         name: String,
         note: String,
         project: Option<String>,
+        tags: Vec<String>,
     },
     Complete(String),
     Drop(String),
-    Update { id: String, name: String, note: String },
+    Update {
+        id: String,
+        name: String,
+        note: String,
+        /// Some 表示写回整组标签（替换语义）；None 表示不修改。
+        tags: Option<Vec<String>>,
+    },
     Flag(String, bool),
-    Tag { id: String, tags: Vec<String> },
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -266,14 +282,16 @@ impl App {
                         true,
                     )
                 }),
-                Operation::Create { name, note, project } => {
-                    backend.create(&name, &note, project.as_deref()).map(|task| {
-                        (
-                            Some("任务已创建".into()),
-                            task.get("id").and_then(|id| id.as_str()).map(str::to_owned),
-                            false,
-                        )
-                    })
+                Operation::Create { name, note, project, tags } => {
+                    backend
+                        .create(&name, &note, project.as_deref(), &tags)
+                        .map(|task| {
+                            (
+                                Some("任务已创建".into()),
+                                task.get("id").and_then(|id| id.as_str()).map(str::to_owned),
+                                false,
+                            )
+                        })
                 }
                 Operation::Complete(id) => backend
                     .complete(&id)
@@ -281,8 +299,8 @@ impl App {
                 Operation::Drop(id) => backend
                     .drop(&id)
                     .map(|_| (Some("任务已删除".into()), None, false)),
-                Operation::Update { id, name, note } => backend
-                    .update(&id, &name, &note)
+                Operation::Update { id, name, note, tags } => backend
+                    .update(&id, &name, &note, tags.as_deref())
                     .map(|_| (Some("任务已更新".into()), None, false)),
                 Operation::Flag(id, flagged) => backend.flag(&id, flagged).map(|_| {
                     (
@@ -298,9 +316,6 @@ impl App {
                         false,
                     )
                 }),
-                Operation::Tag { id, tags } => backend
-                    .tag(&id, &tags)
-                    .map(|_| (Some("标签已更新".into()), None, false)),
             };
             let outcome = match result {
                 Ok((message, select_id, to_inbox)) => {
@@ -414,6 +429,22 @@ impl App {
         }
     }
 
+    fn open_editor(&mut self, field: EditField) {
+        if let Some(task) = self.selected() {
+            self.edit = Some(EditState {
+                id: Some(task.id.clone()),
+                name: task.name.clone(),
+                note: task.note.clone().unwrap_or_default(),
+                tags: task.tags.join(" "),
+                original_tags: task.tags.clone(),
+                field,
+                project: None,
+            });
+            self.mode = Mode::Edit;
+            self.error = false;
+        }
+    }
+
     fn focus_selected_task_project(&mut self) {
         let Some((id, project)) = self
             .selected()
@@ -462,7 +493,7 @@ impl App {
 
     pub fn event(&mut self, event: Event) {
         if let Event::Paste(text) = event {
-            if matches!(self.mode, Mode::Search | Mode::Capture | Mode::Tag | Mode::Edit) {
+            if matches!(self.mode, Mode::Search | Mode::Capture | Mode::Edit) {
                 let text: String = text.chars().filter(|c| !c.is_control()).collect();
                 if matches!(self.mode, Mode::Edit) {
                     if let Some(edit) = self.edit.as_mut() {
@@ -523,10 +554,7 @@ impl App {
             }
             return;
         }
-        if matches!(
-            self.mode,
-            Mode::Capture | Mode::Search | Mode::Tag | Mode::Edit
-        ) {
+        if matches!(self.mode, Mode::Capture | Mode::Search | Mode::Edit) {
             match key.code {
                 KeyCode::Esc if self.job.is_none() => {
                     if self.capture_only {
@@ -543,38 +571,38 @@ impl App {
                         self.start(Operation::Capture(self.input.clone()));
                     }
                 }
-                KeyCode::Enter if self.mode == Mode::Tag => {
-                    let added: Vec<String> = self
-                        .input
-                        .split_whitespace()
-                        .map(str::to_owned)
-                        .collect();
-                    if let (Some(task), false) = (self.selected(), added.is_empty()) {
-                        self.start(Operation::Tag {
-                            id: task.id.clone(),
-                            tags: merged_tags(&task.tags, &added),
-                        });
-                    }
-                }
                 KeyCode::Enter if self.mode == Mode::Edit => match self.edit.take() {
-                    Some(edit) if !edit.name.trim().is_empty() => {
+                    Some(edit)
+                        if !edit.name.trim().is_empty() && !tries_to_clear_all_tags(&edit) =>
+                    {
                         let name = edit.name.trim().to_owned();
                         let note = edit.note;
+                        let tags: Vec<String> =
+                            edit.tags.split_whitespace().map(str::to_owned).collect();
                         match edit.id {
-                            Some(id) => self.start(Operation::Update { id, name, note }),
+                            Some(id) => {
+                                let tags = (tags != edit.original_tags).then_some(tags);
+                                self.start(Operation::Update { id, name, note, tags });
+                            }
                             None => {
                                 self.start(Operation::Create {
                                     name,
                                     note,
                                     project: edit.project,
+                                    tags,
                                 });
                             }
                         }
                     }
                     Some(edit) => {
-                        // 名称被清空：回到编辑态并提示，不写入
+                        // 名称被清空或试图清空全部标签：回到编辑态并提示，不写入
                         self.edit = Some(edit);
-                        self.status = "任务名称不能为空".into();
+                        if self.edit.as_ref().is_some_and(tries_to_clear_all_tags) {
+                            self.status =
+                                "暂不支持清空全部标签（CLI 限制），请至少保留一个".into();
+                        } else {
+                            self.status = "任务名称不能为空".into();
+                        }
                         self.error = true;
                     }
                     None => {}
@@ -583,7 +611,8 @@ impl App {
                     if let Some(edit) = self.edit.as_mut() {
                         edit.field = match edit.field {
                             EditField::Name => EditField::Note,
-                            EditField::Note => EditField::Name,
+                            EditField::Note => EditField::Tags,
+                            EditField::Tags => EditField::Name,
                         };
                     }
                 }
@@ -696,11 +725,8 @@ impl App {
                 }
             }
             Action::Tag if !self.sidebar_focus && self.job.is_none() => {
-                if self.selected().is_some() {
-                    self.mode = Mode::Tag;
-                    self.input.clear();
-                    self.error = false;
-                }
+                // 复用编辑表单，直接定位到标签字段
+                self.open_editor(EditField::Tags);
             }
             Action::FocusProject if self.job.is_none() => self.focus_selected_task_project(),
             Action::Complete if !self.sidebar_focus && self.job.is_none() => {
@@ -722,17 +748,7 @@ impl App {
                 }
             }
             Action::Edit if !self.sidebar_focus && self.job.is_none() => {
-                if let Some(task) = self.selected() {
-                    self.edit = Some(EditState {
-                        id: Some(task.id.clone()),
-                        name: task.name.clone(),
-                        note: task.note.clone().unwrap_or_default(),
-                        field: EditField::Name,
-                        project: None,
-                    });
-                    self.mode = Mode::Edit;
-                    self.error = false;
-                }
+                self.open_editor(EditField::Name);
             }
             Action::Create if self.job.is_none() => {
                 // 在当前项目视图下新建到该项目，否则进收件箱；侧栏聚焦时同样生效。
@@ -749,6 +765,8 @@ impl App {
                     id: None,
                     name: String::new(),
                     note: String::new(),
+                    tags: String::new(),
+                    original_tags: vec![],
                     field: EditField::Name,
                     project,
                 });
@@ -974,10 +992,7 @@ impl App {
             Paragraph::new(footer_text).style(Style::default().fg(MUTED)),
             footer,
         );
-        if matches!(
-            self.mode,
-            Mode::Capture | Mode::Search | Mode::Tag | Mode::Confirm | Mode::Edit
-        ) {
+        if matches!(self.mode, Mode::Capture | Mode::Search | Mode::Confirm | Mode::Edit) {
             let [_, center, _] = Layout::vertical([
                 Constraint::Fill(1),
                 Constraint::Length(8),
@@ -1011,35 +1026,25 @@ impl App {
                         self.input
                     ),
                 ),
-                Mode::Tag => (
-                    " 添加标签 ".into(),
-                    format!(
-                        "{}▏\n\n{} · Enter 保存 · Esc 取消\n已有  {}",
-                        self.input,
-                        self.selected().map(|t| t.name.as_str()).unwrap_or(""),
-                        self.selected()
-                            .map(|t| t.tags.join(" "))
-                            .unwrap_or_default(),
-                    ),
-                ),
                 Mode::Edit => {
-                    let (name, note, field, is_new, project) = self
+                    let (name, note, tags, field, is_new, project) = self
                         .edit
                         .as_ref()
                         .map(|edit| {
                             (
                                 edit.name.as_str(),
                                 edit.note.as_str(),
+                                edit.tags.as_str(),
                                 edit.field,
                                 edit.id.is_none(),
                                 edit.project.as_deref(),
                             )
                         })
-                        .unwrap_or(("", "", EditField::Name, false, None));
-                    let (name_mark, note_mark) = if field == EditField::Name {
-                        ("▏", "")
-                    } else {
-                        ("", "▏")
+                        .unwrap_or(("", "", "", EditField::Name, false, None));
+                    let (name_mark, note_mark, tags_mark) = match field {
+                        EditField::Name => ("▏", "", ""),
+                        EditField::Note => ("", "▏", ""),
+                        EditField::Tags => ("", "", "▏"),
                     };
                     let title = if is_new {
                         format!(" 新建任务 · {} ", project.unwrap_or("收件箱"))
@@ -1049,7 +1054,7 @@ impl App {
                     (
                         title,
                         format!(
-                            "名称  {name}{name_mark}\n备注  {note}{note_mark}\n\nTab 切换字段 · Enter 保存 · Esc 取消{}",
+                            "名称  {name}{name_mark}\n备注  {note}{note_mark}\n标签  {tags}{tags_mark}\n\nTab 切换字段 · Enter 保存 · Esc 取消{}",
                             if self.error || self.job.is_some() {
                                 format!("\n{}", self.status)
                             } else {
@@ -1088,18 +1093,6 @@ impl App {
 
 fn highlight() -> Style {
     Style::default().bg(SELECTED).fg(Color::White)
-}
-
-/// 合并已有标签与新标签：保持原有顺序，去重，新标签按输入顺序追加。
-fn merged_tags(existing: &[String], added: &[String]) -> Vec<String> {
-    let mut tags = existing.to_vec();
-    tags.extend(
-        added
-            .iter()
-            .filter(|tag| !existing.contains(tag))
-            .cloned(),
-    );
-    tags
 }
 
 fn view_project_name<'a>(projects: &'a [Project], view: &View) -> Option<&'a str> {
@@ -1307,15 +1300,13 @@ mod tests {
             terminal.draw(|frame| app.draw(frame)).unwrap();
             app.mode = Mode::Capture;
             terminal.draw(|frame| app.draw(frame)).unwrap();
-            app.mode = Mode::Tag;
-            app.input = "errand".into();
-            terminal.draw(|frame| app.draw(frame)).unwrap();
-            app.input.clear();
             app.mode = Mode::Edit;
             app.edit = Some(EditState {
                 id: Some("one".into()),
                 name: "中文任务".into(),
                 note: "详细说明".into(),
+                tags: "下一步".into(),
+                original_tags: vec!["下一步".into()],
                 field: EditField::Note,
                 project: None,
             });
@@ -1426,7 +1417,7 @@ mod tests {
         assert!(app.edit.is_none());
         app.sidebar_focus = false;
 
-        // 打开编辑：预填当前名称与备注
+        // 打开编辑：预填当前名称、备注与标签
         app.event(press('e'));
         assert!(app.mode == Mode::Edit);
         assert_eq!(
@@ -1437,18 +1428,24 @@ mod tests {
             app.edit.as_ref().map(|e| e.note.as_str()),
             Some("详细说明")
         );
+        assert_eq!(app.edit.as_ref().map(|e| e.tags.as_str()), Some("下一步"));
 
-        // Tab 切换字段后分别编辑
+        // Tab 在三个字段间循环：名称 → 备注 → 标签 → 名称
         app.event(press('2'));
         app.event(key(KeyCode::Tab));
+        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Note);
         app.event(press('！'));
+        app.event(key(KeyCode::Tab));
+        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Tags);
+        app.event(press('x'));
+        app.event(key(KeyCode::Tab));
+        assert_eq!(app.edit.as_ref().unwrap().field, EditField::Name);
         let edit = app.edit.as_ref().unwrap();
         assert_eq!(edit.name, "中文任务2");
         assert_eq!(edit.note, "详细说明！");
-        assert_eq!(edit.field, EditField::Note);
+        assert_eq!(edit.tags, "下一步x");
 
-        // 清空名称后 Enter 不写入、不关弹窗
-        app.event(key(KeyCode::Tab));
+        // 清空名称后 Enter 不写入、不关弹窗（当前已在名称字段）
         while app
             .edit
             .as_ref()
@@ -1545,14 +1542,7 @@ mod tests {
     }
 
     #[test]
-    fn tag_dialog_merges_without_duplicates() {
-        let existing = vec!["下一步".to_string()];
-        assert_eq!(
-            merged_tags(&existing, &["errand".into(), "下一步".into(), "家".into()]),
-            vec!["下一步".to_string(), "errand".to_string(), "家".to_string()]
-        );
-        assert!(merged_tags(&[], &[]).is_empty());
-
+    fn tag_key_reuses_edit_form_at_the_tags_field() {
         let mut app = app();
         let press = |c: char| {
             Event::Key(crossterm::event::KeyEvent::new(
@@ -1567,18 +1557,39 @@ mod tests {
         // 侧栏不触发
         app.sidebar_focus = true;
         app.event(press('t'));
-        assert!(app.mode == Mode::Normal);
+        assert!(app.edit.is_none());
         app.sidebar_focus = false;
 
-        // 打开、输入、空输入 Enter 不写入，Esc 取消
+        // t 打开编辑表单并定位到标签字段，预填已有标签
         app.event(press('t'));
-        assert!(app.mode == Mode::Tag);
-        app.event(press('x'));
-        assert_eq!(app.input, "x");
-        app.event(key(KeyCode::Backspace));
-        app.event(key(KeyCode::Enter)); // 空输入不写入
-        assert!(app.mode == Mode::Tag);
+        assert!(app.mode == Mode::Edit);
+        let edit = app.edit.as_ref().unwrap();
+        assert_eq!(edit.field, EditField::Tags);
+        assert_eq!(edit.id.as_deref(), Some("one"));
+        assert_eq!(edit.tags, "下一步");
+        assert_eq!(edit.original_tags, vec!["下一步".to_string()]);
+
+        // 清空标签字段后 Enter 被拦截（CLI 无法表达清空全部标签）
+        while app
+            .edit
+            .as_ref()
+            .is_some_and(|edit| !edit.tags.is_empty())
+        {
+            app.event(key(KeyCode::Backspace));
+        }
+        app.event(key(KeyCode::Enter));
+        assert!(app.mode == Mode::Edit);
         assert!(app.job.is_none());
+        assert!(app.error);
+
+        // 追加一个标签再 Esc 取消，不写入
+        app.event(press('e'));
+        app.event(press('r'));
+        app.event(press('r'));
+        app.event(press('a'));
+        app.event(press('n'));
+        app.event(press('d'));
+        assert_eq!(app.edit.as_ref().unwrap().tags, "errand");
         app.event(key(KeyCode::Esc));
         assert!(app.mode == Mode::Normal);
         assert!(app.job.is_none());
