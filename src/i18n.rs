@@ -88,11 +88,19 @@ impl Lang {
             self.due_label(),
             task.due.as_deref().map(date).unwrap_or_else(|| "—".into()),
             self.defer_label(),
-            task.defer.as_deref().map(date).unwrap_or_else(|| "—".into()),
+            task.defer
+                .as_deref()
+                .map(date)
+                .unwrap_or_else(|| "—".into()),
             self.planned_label(),
-            task.planned.as_deref().map(date).unwrap_or_else(|| "—".into()),
+            task.planned
+                .as_deref()
+                .map(date)
+                .unwrap_or_else(|| "—".into()),
             self.estimate_label(),
-            task.estimated_minutes.map(|m| self.minutes(m)).unwrap_or_else(|| "—".into()),
+            task.estimated_minutes
+                .map(|m| self.minutes(m))
+                .unwrap_or_else(|| "—".into()),
             task.id,
             task.note.as_deref().unwrap_or(self.no_note()),
         )
@@ -274,9 +282,9 @@ impl Lang {
             Lang::Zh => {
                 format!("已聚焦「{name}」· 侧栏只显示该项目，再按 F 或 Esc 取消")
             }
-            Lang::En => format!(
-                "Focused \"{name}\" · sidebar shows only this project; F or Esc to cancel"
-            ),
+            Lang::En => {
+                format!("Focused \"{name}\" · sidebar shows only this project; F or Esc to cancel")
+            }
         }
     }
     pub fn focus_cleared(self) -> &'static str {
@@ -517,8 +525,8 @@ impl Lang {
     // —— 命令行输出 ——
     pub fn help_text(self) -> String {
         match self {
-            Lang::Zh => "omnifocus-tui — 独立的 OmniFocus 终端界面\n\n用法：omnifocus-tui [--capture | --check | --keys | --version]\n\n  --capture  快速收集到 Inbox，保存后退出\n  --check    只读验证 of 连接并显示项目与任务数量\n  --keys     按键调试：打印终端上报的按键事件\n\n需要 macOS、OmniFocus、of CLI。可用 OMNIFOCUS_CLI 指定 of 路径。\n任意终端直接运行；可选 Herdr 集成见 integrations/herdr/。".into(),
-            Lang::En => "omnifocus-tui — a standalone terminal UI for OmniFocus\n\nUsage: omnifocus-tui [--capture | --check | --keys | --version]\n\n  --capture  quick capture to Inbox, exits after saving\n  --check    read-only check of the of connection with counts\n  --keys     key debug: print key events reported by the terminal\n\nRequires macOS, OmniFocus and the of CLI. OMNIFOCUS_CLI overrides the of path.\nRuns in any terminal; optional Herdr integration lives in integrations/herdr/.".into(),
+            Lang::Zh => "omnifocus-tui — 独立的 OmniFocus 终端界面\n\n用法：omnifocus-tui [--capture | --check | --keys | --version | update]\n\n  --capture  快速收集到 Inbox，保存后退出\n  --check    只读验证 of 连接并显示项目与任务数量\n  --keys     按键调试：打印终端上报的按键事件\n  update     自更新到最新 release（等价于重跑 install.sh）\n\n需要 macOS、OmniFocus、of CLI。可用 OMNIFOCUS_CLI 指定 of 路径。\n任意终端直接运行；可选 Herdr 集成见 integrations/herdr/。".into(),
+            Lang::En => "omnifocus-tui — a standalone terminal UI for OmniFocus\n\nUsage: omnifocus-tui [--capture | --check | --keys | --version | update]\n\n  --capture  quick capture to Inbox, exits after saving\n  --check    read-only check of the of connection with counts\n  --keys     key debug: print key events reported by the terminal\n  update     self-update to the latest release (same as re-running install.sh)\n\nRequires macOS, OmniFocus and the of CLI. OMNIFOCUS_CLI overrides the of path.\nRuns in any terminal; optional Herdr integration lives in integrations/herdr/.".into(),
         }
     }
     pub fn unknown_arg(self) -> &'static str {
@@ -535,9 +543,9 @@ impl Lang {
     }
     pub fn check_ok(self, projects: usize, tasks: usize) -> String {
         match self {
-            Lang::Zh => format!(
-                "OmniFocus 连接成功：{projects} 个项目，{tasks} 个任务（已排除项目根任务）"
-            ),
+            Lang::Zh => {
+                format!("OmniFocus 连接成功：{projects} 个项目，{tasks} 个任务（已排除项目根任务）")
+            }
             Lang::En => format!(
                 "OmniFocus connected: {projects} projects, {tasks} tasks (project roots excluded)"
             ),
@@ -547,6 +555,51 @@ impl Lang {
         match self {
             Lang::Zh => format!("  {name} · {count} 个任务"),
             Lang::En => format!("  {name} · {count} tasks"),
+        }
+    }
+
+    // —— 自更新 ——
+    pub fn update_downloading(self) -> &'static str {
+        match self {
+            Lang::Zh => "正在下载",
+            Lang::En => "Downloading",
+        }
+    }
+    pub fn update_already(self, version: &str) -> String {
+        match self {
+            Lang::Zh => format!("omnifocus-tui {version} 已是最新版本"),
+            Lang::En => format!("omnifocus-tui {version} is already the latest release"),
+        }
+    }
+    pub fn update_done(self, from: &str, to: &str) -> String {
+        match self {
+            Lang::Zh => format!("已更新 {from} → {to}，重新运行 omnifocus-tui 即可使用新版本"),
+            Lang::En => {
+                format!("Updated {from} → {to}; restart omnifocus-tui to run the new version")
+            }
+        }
+    }
+    pub fn update_fail_fetch(self) -> String {
+        match self {
+            Lang::Zh => "获取或下载新版本失败，请检查网络后重试，或重跑 install.sh".into(),
+            Lang::En => {
+                "Could not fetch or download the release; check your network or re-run install.sh"
+                    .into()
+            }
+        }
+    }
+    pub fn update_fail_checksum(self) -> String {
+        match self {
+            Lang::Zh => "校验和不匹配，已放弃更新".into(),
+            Lang::En => "Checksum mismatch; update aborted".into(),
+        }
+    }
+    pub fn update_fail_install(self, error: &std::io::Error) -> String {
+        match self {
+            Lang::Zh => format!("无法替换当前二进制（{error}），可重跑 install.sh 更新"),
+            Lang::En => format!(
+                "Could not replace the running binary ({error}); re-run install.sh to update"
+            ),
         }
     }
 }

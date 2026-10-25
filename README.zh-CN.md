@@ -31,6 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/install.
 omnifocus-tui
 ```
 
+以后升级只需一条命令：`omnifocus-tui update`。
+
 ### 首次启动
 
 macOS 会弹窗询问一次自动化 OmniFocus 的权限——点**允许**，再按 `r` 刷新即可。设置到此结束。
@@ -115,7 +117,7 @@ cargo run                                          # 源码运行
 cargo test && cargo clippy --all-targets -- -D warnings
 ```
 
-常用参数：`--check` 只读检查连接、`--capture` 快速收集后退出、`--keys` 打印终端上报的按键事件。程序在 PATH 和 `~/.bun/bin` 里查找 `of`，可用 `OMNIFOCUS_CLI` 指定路径。
+常用参数：`--check` 只读检查连接、`--capture` 快速收集后退出、`--keys` 打印终端上报的按键事件；`omnifocus-tui update` 下载最新 release 并原地替换二进制。程序在 PATH 和 `~/.bun/bin` 里查找 `of`，可用 `OMNIFOCUS_CLI` 指定路径。
 
 ## 文档
 

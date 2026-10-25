@@ -2,6 +2,7 @@ mod app;
 mod backend;
 mod config;
 mod i18n;
+mod update;
 
 use crossterm::{
     event::{
@@ -93,13 +94,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             result?;
             return Ok(());
         }
+        Some("update") if args.len() == 1 => {
+            update::run(lang)?;
+            return Ok(());
+        }
         Some("--capture") if args.len() == 1 => {}
         None => {}
         _ => return Err(lang.unknown_arg().into()),
     }
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(lang.need_tty().into());
-    }    let mut terminal = ratatui::try_init()?;
+    }
+    let mut terminal = ratatui::try_init()?;
     let result = (|| -> io::Result<()> {
         execute!(
             io::stdout(),
@@ -113,8 +119,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
             )
         )?;
-        let mut app =
-            app::App::new(args.first().is_some_and(|arg| arg == "--capture"), config);
+        let mut app = app::App::new(args.first().is_some_and(|arg| arg == "--capture"), config);
         while !app.quit {
             app.tick();
             terminal.draw(|frame| app.draw(frame))?;

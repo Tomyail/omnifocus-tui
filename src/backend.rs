@@ -308,7 +308,13 @@ mod tests {
             missing_tags(&list, &["errand".into(), "新标签".into(), "1".into()]),
             vec!["新标签".to_string(), "1".to_string()]
         );
-        assert_eq!(missing_tags(&json!([]), &["a".into()]), vec!["a".to_string()]);
-        assert_eq!(missing_tags(&json!({}), &["a".into()]), vec!["a".to_string()]);
+        assert_eq!(
+            missing_tags(&json!([]), &["a".into()]),
+            vec!["a".to_string()]
+        );
+        assert_eq!(
+            missing_tags(&json!({}), &["a".into()]),
+            vec!["a".to_string()]
+        );
     }
 }

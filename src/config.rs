@@ -321,7 +321,10 @@ mod tests {
         assert!(error.contains("keys.down"), "{error}");
         assert!(Keymaps::from_toml("[keys\ndown = 3").is_err());
         let error = Keymaps::from_toml("[keys]\nflga = [\"x\"]").unwrap_err();
-        assert!(error.contains("flga") || error.contains("unknown"), "{error}");
+        assert!(
+            error.contains("flga") || error.contains("unknown"),
+            "{error}"
+        );
     }
 
     #[test]

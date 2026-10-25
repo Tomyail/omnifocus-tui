@@ -31,6 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/install.
 omnifocus-tui
 ```
 
+Upgrading later is one command: `omnifocus-tui update`.
+
 ### First launch
 
 macOS asks once for permission to automate OmniFocus — click **OK**, then press `r` to refresh. That's the whole setup.
@@ -115,7 +117,7 @@ cargo run                                          # run from source
 cargo test && cargo clippy --all-targets -- -D warnings
 ```
 
-Useful flags: `--check` (read-only connection test), `--capture` (quick capture that exits after saving), `--keys` (print the key events your terminal reports). The app looks for `of` on PATH, then `~/.bun/bin/of`; override with `OMNIFOCUS_CLI=/path/to/of`.
+Useful flags: `--check` (read-only connection test), `--capture` (quick capture that exits after saving), `--keys` (print the key events your terminal reports); `omnifocus-tui update` downloads the latest release and replaces the binary in place. The app looks for `of` on PATH, then `~/.bun/bin/of`; override with `OMNIFOCUS_CLI=/path/to/of`.
 
 ## Documentation
 

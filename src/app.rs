@@ -293,29 +293,37 @@ impl App {
                         true,
                     )
                 }),
-                Operation::Create { name, note, project, tags } => {
-                    backend
-                        .create(&name, &note, project.as_deref(), &tags)
-                        .map(|task| {
-                            (
-                                Some(lang.created().into()),
-                                task.get("id").and_then(|id| id.as_str()).map(str::to_owned),
-                                false,
-                            )
-                        })
-                }
+                Operation::Create {
+                    name,
+                    note,
+                    project,
+                    tags,
+                } => backend
+                    .create(&name, &note, project.as_deref(), &tags)
+                    .map(|task| {
+                        (
+                            Some(lang.created().into()),
+                            task.get("id").and_then(|id| id.as_str()).map(str::to_owned),
+                            false,
+                        )
+                    }),
                 Operation::Complete(id) => backend
                     .complete(&id)
                     .map(|_| (Some(lang.completed().into()), None, false)),
                 Operation::Drop(id) => backend
                     .drop(&id)
                     .map(|_| (Some(lang.deleted().into()), None, false)),
-                Operation::Update { id, name, note, tags } => backend
+                Operation::Update {
+                    id,
+                    name,
+                    note,
+                    tags,
+                } => backend
                     .update(&id, &name, &note, tags.as_deref())
                     .map(|_| (Some(lang.updated().into()), None, false)),
-                Operation::Flag(id, flagged) => backend.flag(&id, flagged).map(|_| {
-                    (Some(lang.flag_set(flagged).into()), None, false)
-                }),
+                Operation::Flag(id, flagged) => backend
+                    .flag(&id, flagged)
+                    .map(|_| (Some(lang.flag_set(flagged).into()), None, false)),
             };
             let outcome = match result {
                 Ok((message, select_id, to_inbox)) => {
@@ -625,53 +633,63 @@ impl App {
                         && !key
                             .modifiers
                             .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
+                {
                     match self.edit.take() {
-                    Some(edit)
-                        if !edit.name.trim().is_empty() && !tries_to_clear_all_tags(&edit) =>
-                    {
-                        let name = edit.name.trim().to_owned();
-                        let note = edit.note;
-                        let tags: Vec<String> =
-                            edit.tags.split_whitespace().map(str::to_owned).collect();
-                        match edit.id {
-                            Some(id) => {
-                                let tags = (tags != edit.original_tags).then_some(tags);
-                                self.start(Operation::Update { id, name, note, tags });
-                            }
-                            None => {
-                                self.start(Operation::Create {
-                                    name,
-                                    note,
-                                    project: edit.project,
-                                    tags,
-                                });
+                        Some(edit)
+                            if !edit.name.trim().is_empty() && !tries_to_clear_all_tags(&edit) =>
+                        {
+                            let name = edit.name.trim().to_owned();
+                            let note = edit.note;
+                            let tags: Vec<String> =
+                                edit.tags.split_whitespace().map(str::to_owned).collect();
+                            match edit.id {
+                                Some(id) => {
+                                    let tags = (tags != edit.original_tags).then_some(tags);
+                                    self.start(Operation::Update {
+                                        id,
+                                        name,
+                                        note,
+                                        tags,
+                                    });
+                                }
+                                None => {
+                                    self.start(Operation::Create {
+                                        name,
+                                        note,
+                                        project: edit.project,
+                                        tags,
+                                    });
+                                }
                             }
                         }
-                    }
-                    Some(edit) => {
-                        // 名称被清空或试图清空全部标签：回到编辑态并提示，不写入
-                        self.edit = Some(edit);
-                        if self.edit.as_ref().is_some_and(tries_to_clear_all_tags) {
-                            self.status = self.lang.cannot_clear_tags().into();
-                        } else {
-                            self.status = self.lang.name_empty().into();
+                        Some(edit) => {
+                            // 名称被清空或试图清空全部标签：回到编辑态并提示，不写入
+                            self.edit = Some(edit);
+                            if self.edit.as_ref().is_some_and(tries_to_clear_all_tags) {
+                                self.status = self.lang.cannot_clear_tags().into();
+                            } else {
+                                self.status = self.lang.name_empty().into();
+                            }
+                            self.error = true;
                         }
-                        self.error = true;
+                        None => {}
                     }
-                    None => {}
-                },
+                }
                 KeyCode::Tab if self.mode == Mode::Edit => {
                     // 标签字段有联想时 Tab 先补全选中项，否则在字段间循环
                     let in_tags = self
                         .edit
                         .as_ref()
                         .is_some_and(|edit| edit.field == EditField::Tags);
-                    let suggestions = if in_tags { self.tag_suggestions() } else { vec![] };
+                    let suggestions = if in_tags {
+                        self.tag_suggestions()
+                    } else {
+                        vec![]
+                    };
                     if let Some(edit) = self.edit.as_mut()
                         && !suggestions.is_empty()
                     {
-                        let picked =
-                            suggestions[edit.tag_index % suggestions.len()].clone();
+                        let picked = suggestions[edit.tag_index % suggestions.len()].clone();
                         let prefix = edit
                             .tags
                             .rsplit_once(' ')
@@ -693,7 +711,11 @@ impl App {
                         .edit
                         .as_ref()
                         .is_some_and(|edit| edit.field == EditField::Tags);
-                    let len = if in_tags { self.tag_suggestions().len() } else { 0 };
+                    let len = if in_tags {
+                        self.tag_suggestions().len()
+                    } else {
+                        0
+                    };
                     if len > 0
                         && let Some(edit) = self.edit.as_mut()
                     {
@@ -1043,7 +1065,12 @@ impl App {
         let status_text = if self.query.is_empty() {
             self.status.clone()
         } else {
-            format!("{}{} · {}", self.lang.search_prefix(), self.query, self.status)
+            format!(
+                "{}{} · {}",
+                self.lang.search_prefix(),
+                self.query,
+                self.status
+            )
         };
         frame.render_widget(
             Paragraph::new(status_text)
@@ -1055,29 +1082,50 @@ impl App {
         let lang = self.lang;
         let footer_text = format!(
             " {} {}  {}/{} {}  {} {}  {} {}  {} {}  {} {}  {} {}  {} {}\n {} {}  {} {}  {} {}  {} {}  {} {}  {} {}  {} {}  {} {}  {} {}",
-            keys.first(Action::TogglePane), lang.h_panes(),
-            keys.first(Action::Down), keys.first(Action::Up), lang.h_move(),
-            keys.first(Action::ToggleDetail), lang.h_detail(),
-            keys.first(Action::Search), lang.h_search(),
-            keys.first(Action::Capture), lang.h_capture(),
-            keys.first(Action::Create), lang.h_new(),
-            keys.first(Action::Edit), lang.h_edit(),
-            keys.first(Action::Tag), lang.h_tags(),
-            keys.first(Action::Complete), lang.h_complete(),
-            keys.first(Action::Delete), lang.h_delete(),
-            keys.first(Action::Flag), lang.h_flag(),
-            keys.first(Action::FocusProject), lang.h_focus(),
-            keys.first(Action::Copy), lang.h_copy(),
-            keys.first(Action::Open), lang.h_open(),
-            keys.first(Action::Refresh), lang.h_refresh(),
-            keys.first(Action::ToggleSidebar), lang.h_sidebar(),
-            keys.first(Action::Quit), lang.h_quit(),
+            keys.first(Action::TogglePane),
+            lang.h_panes(),
+            keys.first(Action::Down),
+            keys.first(Action::Up),
+            lang.h_move(),
+            keys.first(Action::ToggleDetail),
+            lang.h_detail(),
+            keys.first(Action::Search),
+            lang.h_search(),
+            keys.first(Action::Capture),
+            lang.h_capture(),
+            keys.first(Action::Create),
+            lang.h_new(),
+            keys.first(Action::Edit),
+            lang.h_edit(),
+            keys.first(Action::Tag),
+            lang.h_tags(),
+            keys.first(Action::Complete),
+            lang.h_complete(),
+            keys.first(Action::Delete),
+            lang.h_delete(),
+            keys.first(Action::Flag),
+            lang.h_flag(),
+            keys.first(Action::FocusProject),
+            lang.h_focus(),
+            keys.first(Action::Copy),
+            lang.h_copy(),
+            keys.first(Action::Open),
+            lang.h_open(),
+            keys.first(Action::Refresh),
+            lang.h_refresh(),
+            keys.first(Action::ToggleSidebar),
+            lang.h_sidebar(),
+            keys.first(Action::Quit),
+            lang.h_quit(),
         );
         frame.render_widget(
             Paragraph::new(footer_text).style(Style::default().fg(MUTED)),
             footer,
         );
-        if matches!(self.mode, Mode::Capture | Mode::Search | Mode::Confirm | Mode::Edit) {
+        if matches!(
+            self.mode,
+            Mode::Capture | Mode::Search | Mode::Confirm | Mode::Edit
+        ) {
             // 联想行只在编辑表单的标签字段有候选时出现，多占一行高度；备注的额外行同理
             let note_extra = if self.mode == Mode::Edit {
                 self.edit
@@ -1197,7 +1245,10 @@ impl App {
                         ),
                     )
                 }
-                _ => match self.confirm.as_ref().map(|(task, action)| (task.name.as_str(), action))
+                _ => match self
+                    .confirm
+                    .as_ref()
+                    .map(|(task, action)| (task.name.as_str(), action))
                 {
                     Some((name, ConfirmAction::Delete)) => {
                         (self.lang.delete_title().into(), self.lang.delete_body(name))
@@ -1270,7 +1321,10 @@ fn tag_suggestions_for(known: &[String], tasks: &[Task], field: &str) -> Vec<Str
         return vec![];
     }
     let mut pool: Vec<String> = if known.is_empty() {
-        tasks.iter().flat_map(|task| task.tags.iter().cloned()).collect()
+        tasks
+            .iter()
+            .flat_map(|task| task.tags.iter().cloned())
+            .collect()
     } else {
         known.to_vec()
     };
@@ -1591,9 +1645,8 @@ mod tests {
                 KeyModifiers::NONE,
             ))
         };
-        let key = |code: KeyCode| {
-            Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
-        };
+        let key =
+            |code: KeyCode| Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE));
 
         // 侧栏不触发
         app.sidebar_focus = true;
@@ -1604,14 +1657,8 @@ mod tests {
         // 打开编辑：预填当前名称、备注与标签
         app.event(press('e'));
         assert!(app.mode == Mode::Edit);
-        assert_eq!(
-            app.edit.as_ref().map(|e| e.name.as_str()),
-            Some("中文任务")
-        );
-        assert_eq!(
-            app.edit.as_ref().map(|e| e.note.as_str()),
-            Some("详细说明")
-        );
+        assert_eq!(app.edit.as_ref().map(|e| e.name.as_str()), Some("中文任务"));
+        assert_eq!(app.edit.as_ref().map(|e| e.note.as_str()), Some("详细说明"));
         assert_eq!(app.edit.as_ref().map(|e| e.tags.as_str()), Some("下一步"));
 
         // Tab 在三个字段间循环：名称 → 标签 → 备注 → 名称
@@ -1630,11 +1677,7 @@ mod tests {
         assert_eq!(edit.tags, "下一步x");
 
         // 清空名称后 Enter 不写入、不关弹窗（当前已在名称字段）
-        while app
-            .edit
-            .as_ref()
-            .is_some_and(|edit| !edit.name.is_empty())
-        {
+        while app.edit.as_ref().is_some_and(|edit| !edit.name.is_empty()) {
             app.event(key(KeyCode::Backspace));
         }
         app.event(key(KeyCode::Enter));
@@ -1738,9 +1781,8 @@ mod tests {
                 KeyModifiers::NONE,
             ))
         };
-        let key = |code: KeyCode| {
-            Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
-        };
+        let key =
+            |code: KeyCode| Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE));
 
         // 侧栏不触发
         app.sidebar_focus = true;
@@ -1758,11 +1800,7 @@ mod tests {
         assert_eq!(edit.original_tags, vec!["下一步".to_string()]);
 
         // 清空标签字段后 Enter 被拦截（CLI 无法表达清空全部标签）
-        while app
-            .edit
-            .as_ref()
-            .is_some_and(|edit| !edit.tags.is_empty())
-        {
+        while app.edit.as_ref().is_some_and(|edit| !edit.tags.is_empty()) {
             app.event(key(KeyCode::Backspace));
         }
         app.event(key(KeyCode::Enter));
@@ -1812,9 +1850,8 @@ mod tests {
                 KeyModifiers::NONE,
             ))
         };
-        let key = |code: KeyCode| {
-            Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
-        };
+        let key =
+            |code: KeyCode| Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE));
 
         // 打开编辑表单，一次 Tab 即到标签字段（名称 → 标签 → 备注）
         app.event(press('e'));
@@ -1848,9 +1885,8 @@ mod tests {
                 KeyModifiers::NONE,
             ))
         };
-        let key = |code: KeyCode| {
-            Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
-        };
+        let key =
+            |code: KeyCode| Event::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE));
         let shift_enter = Event::Key(crossterm::event::KeyEvent::new(
             KeyCode::Enter,
             KeyModifiers::SHIFT,
@@ -1891,11 +1927,7 @@ mod tests {
         );
 
         // 多行备注可整体删除（退格逐字符）
-        while app
-            .edit
-            .as_ref()
-            .is_some_and(|edit| !edit.note.is_empty())
-        {
+        while app.edit.as_ref().is_some_and(|edit| !edit.note.is_empty()) {
             app.event(key(KeyCode::Backspace));
         }
         assert_eq!(app.edit.as_ref().unwrap().note, "");
