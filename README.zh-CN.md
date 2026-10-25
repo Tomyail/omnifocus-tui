@@ -31,6 +31,14 @@ omnifocus-tui
 
 首次启动时 macOS 会弹窗询问自动化 OmniFocus 的权限——点**允许**后按 `r` 刷新即可。`j`/`k` 移动、`a` 收集、`Enter` 看详情、`q` 退出；底部状态栏始终提示当前可用按键。
 
+卸载（删除二进制、注销 herdr 插件并清理键位）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/uninstall.sh | sh -s -- --purge
+```
+
+不加 `--purge` 则保留 `~/.config/omnifocus-tui` 里的配置文件。
+
 也可以从源码构建：`cargo run`（或 `cargo build --release`）。常用参数：`--check` 只读检查连接、`--capture` 快速收集后退出、`--keys` 打印终端上报的按键事件。程序在 PATH 和 `~/.bun/bin` 里查找 `of`，可用 `OMNIFOCUS_CLI` 指定路径。
 
 ### 常见问题

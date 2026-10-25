@@ -31,6 +31,14 @@ omnifocus-tui
 
 On first launch, macOS asks for permission to automate OmniFocus — click **OK** and press `r` to refresh. Move with `j`/`k`, capture a thought with `a`, open the detail pane with `Enter`, quit with `q`; the footer always shows the active keys.
 
+To uninstall (removes the binary, the herdr plugin and its keybinding):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/uninstall.sh | sh -s -- --purge
+```
+
+Drop `--purge` to keep the config file at `~/.config/omnifocus-tui`.
+
 Building from source works too: `cargo run` (or `cargo build --release`). Useful flags: `--check` (read-only connection test), `--capture` (quick capture that exits after saving), `--keys` (print the key events your terminal reports). The app looks for `of` on PATH, then `~/.bun/bin/of`; override with `OMNIFOCUS_CLI=/path/to/of`.
 
 ### Troubleshooting
