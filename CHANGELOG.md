@@ -2,11 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 The format is based on [Conventional Commits](https://www.conventionalcommits.org).
+## [v0.1.3](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.3) — 2026-10-25
+### Bug fixes
+
+- Start in Inbox and remove the all-tasks view ([`0e73a20`](https://github.com/Tomyail/omnifocus-tui/commit/0e73a20e0ade8a38d78dc0628d98e9e985b6f96b))
 ## [v0.1.2](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.2) — 2026-10-25
 ### Features
 
 - Update command to self-update to the latest release ([`2ceb4de`](https://github.com/Tomyail/omnifocus-tui/commit/2ceb4defc46fdf1e3b5065725f2f2661726ab6b9))
-
 ## [v0.1.1](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.1) — 2026-10-25
 ### Bug fixes
 
