@@ -6,36 +6,42 @@
 
 独立的 OmniFocus 终端界面，使用 Rust + Ratatui，通过 [omnifocus-cli](https://github.com/stephendolan/omnifocus-cli) 直接读写 OmniFocus。可在任何交互式终端运行，不依赖 herdr。
 
-## 安装与运行
+## 快速开始
 
-需要 macOS 和 OmniFocus。先安装 `of` CLI：
+**前置条件**：一台装有 [OmniFocus](https://www.omnigroup.com/omnifocus/) 的 Mac。
+
+**1.** 安装 `of` CLI（需要 [Bun](https://bun.sh)）：
 
 ```sh
+curl -fsSL https://bun.sh/install | bash   # 已装过 Bun 可跳过
 bun install -g @stephendolan/omnifocus-cli
 ```
 
-从 [Releases](https://github.com/Tomyail/omnifocus-tui/releases) 下载预编译二进制（Apple Silicon 与 Intel，无需 Rust）：
+**2.** 一行安装 omnifocus-tui，无需 Rust 工具链：
 
 ```sh
-tar -xzf omnifocus-tui-<版本>-aarch64-apple-darwin.tar.gz
-chmod +x omnifocus-tui && mv omnifocus-tui ~/.local/bin/
+curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/install.sh | sh
 ```
 
-或从源码构建：
+**3.** 在任意终端运行：
 
 ```sh
-cargo run                # 或 cargo build --release && ./target/release/omnifocus-tui
+omnifocus-tui
 ```
 
-常用参数：
+首次启动时 macOS 会弹窗询问自动化 OmniFocus 的权限——点**允许**后按 `r` 刷新即可。`j`/`k` 移动、`a` 收集、`Enter` 看详情、`q` 退出；底部状态栏始终提示当前可用按键。
 
-```sh
-omnifocus-tui --check    # 只读检查连接
-omnifocus-tui --capture  # 快速收集到 Inbox，保存后退出
-omnifocus-tui --keys     # 按键调试：打印终端上报的按键事件
-```
+也可以从源码构建：`cargo run`（或 `cargo build --release`）。常用参数：`--check` 只读检查连接、`--capture` 快速收集后退出、`--keys` 打印终端上报的按键事件。程序在 PATH 和 `~/.bun/bin` 里查找 `of`，可用 `OMNIFOCUS_CLI` 指定路径。
 
-程序会查找 PATH 中的 `of`，然后查找 `~/.bun/bin/of`。也可设置 `OMNIFOCUS_CLI=/absolute/path/to/of`。首次使用时，macOS 可能要求允许自动化访问 OmniFocus。
+### 常见问题
+
+| 现象 | 处理 |
+| --- | --- |
+| `omnifocus-tui: command not found` | `~/.local/bin` 不在 PATH——把 `export PATH="$HOME/.local/bin:$PATH"` 加进 `~/.zshrc` 后重开终端 |
+| 提示"无法运行 of"或任务列表为空 | 缺 of CLI——`bun install -g @stephendolan/omnifocus-cli` |
+| 授权后列表还是空的 | 按 `r` 刷新 |
+| Shift+Enter 没反应 | 终端不支持 kitty 键盘协议——Option+Enter 同样可以换行 |
+| 显示"窗口太小" | 把终端窗口放大到至少 35×10 |
 
 界面语言依次取配置文件里的 `language`、系统语言环境（`en*` 为英文），默认中文。
 

@@ -6,36 +6,42 @@
 
 A standalone terminal UI for OmniFocus, built with Rust + Ratatui, reading and writing OmniFocus directly through [omnifocus-cli](https://github.com/stephendolan/omnifocus-cli). Runs in any interactive terminal, no herdr required.
 
-## Installation
+## Quick start
 
-Requires macOS and OmniFocus. Install the `of` CLI via Bun:
+**Prerequisites:** a Mac with [OmniFocus](https://www.omnigroup.com/omnifocus/) installed.
+
+**1.** Install the `of` CLI (needs [Bun](https://bun.sh)):
 
 ```sh
+curl -fsSL https://bun.sh/install | bash   # skip if Bun is already installed
 bun install -g @stephendolan/omnifocus-cli
 ```
 
-Download a prebuilt binary from [Releases](https://github.com/Tomyail/omnifocus-tui/releases) (Apple Silicon and Intel, no Rust toolchain needed):
+**2.** Install omnifocus-tui — one line, no Rust toolchain required:
 
 ```sh
-tar -xzf omnifocus-tui-<version>-aarch64-apple-darwin.tar.gz
-chmod +x omnifocus-tui && mv omnifocus-tui ~/.local/bin/
+curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/install.sh | sh
 ```
 
-Or build from source:
+**3.** Run it from any terminal:
 
 ```sh
-cargo run                # or: cargo build --release && ./target/release/omnifocus-tui
+omnifocus-tui
 ```
 
-Useful flags:
+On first launch, macOS asks for permission to automate OmniFocus — click **OK** and press `r` to refresh. Move with `j`/`k`, capture a thought with `a`, open the detail pane with `Enter`, quit with `q`; the footer always shows the active keys.
 
-```sh
-omnifocus-tui --check    # read-only connection check
-omnifocus-tui --capture  # quick capture to Inbox, exits after saving
-omnifocus-tui --keys     # key debug: print key events reported by the terminal
-```
+Building from source works too: `cargo run` (or `cargo build --release`). Useful flags: `--check` (read-only connection test), `--capture` (quick capture that exits after saving), `--keys` (print the key events your terminal reports). The app looks for `of` on PATH, then `~/.bun/bin/of`; override with `OMNIFOCUS_CLI=/path/to/of`.
 
-The app looks for `of` on PATH, then `~/.bun/bin/of`. Set `OMNIFOCUS_CLI=/absolute/path/to/of` to override. On first use, macOS may ask for permission to automate OmniFocus.
+### Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `omnifocus-tui: command not found` | `~/.local/bin` is not on your PATH — add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and reopen the terminal |
+| "无法运行 of" or an empty task list | The `of` CLI is missing — `bun install -g @stephendolan/omnifocus-cli` |
+| Still empty right after granting permission | Press `r` to refresh |
+| Shift+Enter does nothing | The terminal lacks the kitty keyboard protocol — Option+Enter inserts a newline too |
+| Window shows "窗口太小" | Resize the terminal to at least 35×10 |
 
 The UI language follows `language` in the config file, then the system locale (`en*` gets English), defaulting to Chinese.
 
