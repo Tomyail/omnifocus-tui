@@ -31,7 +31,7 @@ omnifocus-tui
 
 On first launch, macOS asks for permission to automate OmniFocus — click **OK** and press `r` to refresh. Move with `j`/`k`, capture a thought with `a`, open the detail pane with `Enter`, quit with `q`; the footer always shows the active keys.
 
-To uninstall (removes the binary, the herdr plugin and its keybinding):
+To uninstall (removes the binary and unregisters the herdr plugin; herdr's own config is never modified):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/uninstall.sh | sh -s -- --purge
@@ -140,7 +140,7 @@ For local development against a checkout instead:
 integrations/herdr/install.sh
 ```
 
-It builds, links the repo root with `herdr plugin link`, and appends the keybinding. Press `q` inside the TUI to close the pane. The [uninstall script](#quick-start) removes the plugin and the keybinding.
+It builds and links the repo root with `herdr plugin link`; add the keybinding shown above yourself — this project never edits herdr's config. Press `q` inside the TUI to close the pane.
 
 ## Current scope
 

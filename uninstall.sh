@@ -2,6 +2,7 @@
 # omnifocus-tui uninstaller.
 # Usage: curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/uninstall.sh | sh
 # Pass --purge to also remove ~/.config/omnifocus-tui (config file).
+# herdr's own config is never modified; a leftover keybinding is only reported.
 set -eu
 
 install_dir="${OMNIFOCUS_TUI_INSTALL_DIR:-$HOME/.local/bin}"
@@ -39,28 +40,11 @@ if command -v herdr >/dev/null 2>&1; then
   esac
 fi
 
-# 3) The prefix+o keybinding herdr integration added (config backed up first)
+# 3) Report — never modify — any leftover keybinding in herdr's config
 conf="$herdr_config/config.toml"
 if [ -f "$conf" ] && grep -q 'omnifocus-tui\.open' "$conf"; then
-  cp "$conf" "$conf.omnifocus-backup"
-  awk '
-    function flushbuf() { if (inblock == 1 && keep == 1) printf "%s", buf; inblock = 0 }
-    /^\[\[/ {
-      flushbuf()
-      if ($0 ~ /^\[\[keys\.command\]\]/) { inblock = 1; keep = 1; buf = $0 "\n" }
-      else print
-      next
-    }
-    /^\[/ { flushbuf(); print; next }
-    inblock == 1 {
-      buf = buf $0 "\n"
-      if ($0 ~ /omnifocus-tui\.open/) keep = 0
-      next
-    }
-    { print }
-    END { flushbuf() }
-  ' "$conf" > "$conf.tmp" && mv "$conf.tmp" "$conf"
-  echo "=> Removed the prefix+o keybinding (backup: $conf.omnifocus-backup)"
+  echo "note: a keybinding referencing omnifocus-tui.open remains in $conf;"
+  echo "      remove that [[keys.command]] block manually if you no longer want it."
 fi
 
 # 4) Config file, only with --purge

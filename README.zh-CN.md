@@ -31,7 +31,7 @@ omnifocus-tui
 
 首次启动时 macOS 会弹窗询问自动化 OmniFocus 的权限——点**允许**后按 `r` 刷新即可。`j`/`k` 移动、`a` 收集、`Enter` 看详情、`q` 退出；底部状态栏始终提示当前可用按键。
 
-卸载（删除二进制、注销 herdr 插件并清理键位）：
+卸载（删除二进制并注销 herdr 插件；不会改动 herdr 自身的配置）：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/uninstall.sh | sh -s -- --purge
@@ -140,7 +140,7 @@ command = "omnifocus-tui.open"
 integrations/herdr/install.sh
 ```
 
-脚本会构建、`herdr plugin link` 链接仓库根、追加键位。TUI 内 `q` 退出即关闭弹窗。卸载用[快速开始](#快速开始)里的 uninstall 脚本，会一并清理插件和键位。
+脚本会构建并 `herdr plugin link` 链接仓库根；键位请按上面的片段自行添加——本项目不会代改 herdr 配置。TUI 内 `q` 退出即关闭弹窗。
 
 ## 当前范围
 
