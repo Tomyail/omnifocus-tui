@@ -29,6 +29,20 @@ curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/install.
 omnifocus-tui
 ```
 
+**4.** 在用 [herdr](https://herdr.dev)？一行装成插件，再加个键位就能全屏弹出：
+
+```sh
+herdr plugin install Tomyail/omnifocus-tui
+```
+
+```toml
+# 追加到 ~/.config/herdr/config.toml
+[[keys.command]]
+key = "prefix+o"
+type = "plugin_action"
+command = "omnifocus-tui.open"
+```
+
 首次启动时 macOS 会弹窗询问自动化 OmniFocus 的权限——点**允许**后按 `r` 刷新即可。`j`/`k` 移动、`a` 收集、`Enter` 看详情、`q` 退出；底部状态栏始终提示当前可用按键。
 
 卸载（删除二进制并注销 herdr 插件；不会改动 herdr 自身的配置）：

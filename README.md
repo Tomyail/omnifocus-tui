@@ -29,6 +29,20 @@ curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/install.
 omnifocus-tui
 ```
 
+**4.** Using [herdr](https://herdr.dev)? Install it as a plugin and bind a key for a full-screen popup:
+
+```sh
+herdr plugin install Tomyail/omnifocus-tui
+```
+
+```toml
+# append to ~/.config/herdr/config.toml
+[[keys.command]]
+key = "prefix+o"
+type = "plugin_action"
+command = "omnifocus-tui.open"
+```
+
 On first launch, macOS asks for permission to automate OmniFocus — click **OK** and press `r` to refresh. Move with `j`/`k`, capture a thought with `a`, open the detail pane with `Enter`, quit with `q`; the footer always shows the active keys.
 
 To uninstall (removes the binary and unregisters the herdr plugin; herdr's own config is never modified):
