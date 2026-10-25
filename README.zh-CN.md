@@ -98,16 +98,6 @@ herdr plugin install Tomyail/omnifocus-tui
 
 键位设置与其他动作见 [herdr 集成（英文）](docs/herdr.md)。
 
-## 常见问题
-
-| 现象 | 处理 |
-| --- | --- |
-| `omnifocus-tui: command not found` | `~/.local/bin` 不在 PATH——把 `export PATH="$HOME/.local/bin:$PATH"` 加进 `~/.zshrc` 后重开终端 |
-| 提示"无法运行 of"或任务列表为空 | 缺 of CLI——`bun install -g @stephendolan/omnifocus-cli` |
-| 授权后列表还是空的 | 按 `r` 刷新 |
-| Shift+Enter 没反应 | 终端不支持 kitty 键盘协议——Option+Enter 同样可以换行 |
-| 显示"窗口太小" | 把终端窗口放大到至少 35×10 |
-
 ## 卸载
 
 ```sh
@@ -115,12 +105,6 @@ curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/uninstal
 ```
 
 不加 `--purge` 则保留 `~/.config/omnifocus-tui` 里的配置文件。
-
-## 当前限制
-
-- 视图：全部任务、Inbox、旗标和项目视图；已完成、已放弃和项目根任务不显示。
-- 任务层级、编辑日期、移动任务与重复规则编辑尚未实现。
-- `of` 按项目名称归属任务，同名项目的任务无法精确区分；日期暂显示接口返回的 UTC 时间。
 
 ## 开发
 

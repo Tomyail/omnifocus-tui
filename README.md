@@ -98,16 +98,6 @@ herdr plugin install Tomyail/omnifocus-tui
 
 Keybinding setup and other actions: [herdr integration](docs/herdr.md).
 
-## Troubleshooting
-
-| Symptom | Fix |
-| --- | --- |
-| `omnifocus-tui: command not found` | `~/.local/bin` is not on your PATH — add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and reopen the terminal |
-| "无法运行 of" or an empty task list | The `of` CLI is missing — `bun install -g @stephendolan/omnifocus-cli` |
-| Still empty right after granting permission | Press `r` to refresh |
-| Shift+Enter does nothing | The terminal lacks the kitty keyboard protocol — Option+Enter inserts a newline too |
-| Window shows "窗口太小" | Resize the terminal to at least 35×10 |
-
 ## Uninstall
 
 ```sh
@@ -115,12 +105,6 @@ curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/uninstal
 ```
 
 Drop `--purge` to keep the config file at `~/.config/omnifocus-tui`.
-
-## Limitations
-
-- Views: all tasks, Inbox, flagged and per-project. Completed, dropped and project-root tasks are hidden.
-- Task hierarchy, editing dates, moving tasks and repeat-rule editing are not implemented yet.
-- `of` matches tasks to projects by name, so tasks in same-named projects cannot be told apart; dates are shown in UTC.
 
 ## Development
 
