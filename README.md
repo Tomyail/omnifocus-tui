@@ -6,6 +6,8 @@
 
 A terminal UI for OmniFocus on macOS, built with Rust + Ratatui. It reads and writes your live OmniFocus database directly through [omnifocus-cli](https://github.com/stephendolan/omnifocus-cli) — no sync, no local copy, and nothing else on your system is modified.
 
+![omnifocus-tui](assets/screenshot.png)
+
 ## Quick start
 
 **Prerequisites:** a Mac with [OmniFocus](https://www.omnigroup.com/omnifocus/) installed.

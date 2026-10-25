@@ -6,6 +6,8 @@
 
 macOS 上的 OmniFocus 终端界面，使用 Rust + Ratatui，通过 [omnifocus-cli](https://github.com/stephendolan/omnifocus-cli) 直接读写 OmniFocus 数据库——无需同步，没有本地副本，也不会改动系统里的其他东西。
 
+![omnifocus-tui](assets/screenshot.png)
+
 ## 快速开始
 
 **前置条件**：一台装有 [OmniFocus](https://www.omnigroup.com/omnifocus/) 的 Mac。
