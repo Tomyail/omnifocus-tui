@@ -1,6 +1,6 @@
 id = "omnifocus-tui"
 name = "omnifocus-tui"
-version = "0.1.0"
+version = "0.1.1"
 min_herdr_version = "0.9.0"
 description = "OmniFocus tasks in a herdr popup pane."
 platforms = ["macos"]

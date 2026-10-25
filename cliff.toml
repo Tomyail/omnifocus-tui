@@ -10,7 +10,7 @@ The format is based on [Conventional Commits](https://www.conventionalcommits.or
 """
 body = """
 {% if version %}\
-## {{ version }} — {{ timestamp | date(format="%Y-%m-%d") }}
+## [{{ version }}](https://github.com/Tomyail/omnifocus-tui/releases/tag/{{ version }}) — {{ timestamp | date(format="%Y-%m-%d") }}
 {% else %}\
 ## Unreleased
 {% endif %}\
@@ -18,7 +18,7 @@ body = """
 ### {{ group | upper_first }}
 
 {% for commit in commits %}\
-- {% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message | upper_first }} (`{{ commit.id | truncate(length=7, end="") }}`)
+- {% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message | upper_first }} ([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/Tomyail/omnifocus-tui/commit/{{ commit.id }}))
 {% endfor %}\
 {% endfor %}\
 """
@@ -41,5 +41,6 @@ commit_parsers = [
     { message = "^doc", group = "documentation" },
     { message = "^test", group = "testing" },
     { message = "^ci", group = "ci" },
+    { message = "^chore\\(release\\)", skip = true },
     { message = "^chore", group = "miscellaneous" },
 ]
