@@ -1,0 +1,45 @@
+# git-cliff 配置：按 Conventional Commits 分组生成变更日志
+# https://git-cliff.org/docs/configuration
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to this project will be documented in this file.
+The format is based on [Conventional Commits](https://www.conventionalcommits.org).
+"""
+body = """
+{% if version %}\
+## {{ version }} — {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## Unreleased
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}\
+### {{ group | upper_first }}
+
+{% for commit in commits %}\
+- {% if commit.breaking %}**BREAKING** {% endif %}{{ commit.message | upper_first }} (`{{ commit.id | truncate(length=7, end="") }}`)
+{% endfor %}\
+{% endfor %}\
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = true
+filter_commits = true
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
+commit_parsers = [
+    { message = "^feat", group = "features" },
+    { message = "^fix", group = "bug fixes" },
+    { message = "^perf", group = "performance" },
+    { message = "^refactor", group = "refactoring" },
+    { message = "^doc", group = "documentation" },
+    { message = "^test", group = "testing" },
+    { message = "^ci", group = "ci" },
+    { message = "^chore", group = "miscellaneous" },
+]

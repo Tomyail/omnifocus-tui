@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # herdr 插件入口：向上探测包含 Cargo.toml 的目录作为仓库根。
 # 本地 herdr plugin link 与 herdr plugin install 的 managed checkout 目录层级不同，
-# 因此不能写死相对层级。按需构建并启动 release 版 omnifocus-tui；
-# panic 输出记录到 target/omnifocus-tui-pane.log，失败时停留 5 秒避免报错一闪而过。
+# 因此不能写死相对层级。二进制定位顺序：仓库构建产物 → cargo 构建 → PATH 中已安装
+# 的 omnifocus-tui（如从 GitHub Releases 下载）；都没有时给出安装指引。
+# panic 输出记录到日志，失败时停留 5 秒避免报错一闪而过。
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
@@ -15,27 +16,34 @@ for _ in 1 2 3; do
     break
   fi
 done
-if [ -z "$root" ] && [ -f "$here/Cargo.toml" ]; then
-  root="$here"
-fi
 
 fail() {
   echo "$1" >&2
   echo ""
-  echo "omnifocus-tui 未能启动；详细输出见 target/omnifocus-tui-pane.log"
+  echo "omnifocus-tui 未能启动；详细输出见 ${log:-<无>}"
   sleep 5
   exit 1
 }
 
-[ -n "$root" ] || fail "未找到 omnifocus-tui 仓库根（不含 Cargo.toml）：$here 附近目录布局异常"
-
-log="$root/target/omnifocus-tui-pane.log"
-bin="$root/target/release/omnifocus-tui"
-
-if [ ! -x "$bin" ]; then
+bin=""
+if [ -n "$root" ] && [ -x "$root/target/release/omnifocus-tui" ]; then
+  bin="$root/target/release/omnifocus-tui"
+elif [ -n "$root" ] && command -v cargo >/dev/null 2>&1; then
   (cd "$root" && cargo build --release) || fail "cargo build --release 失败（仓库：$root）"
+  [ -x "$root/target/release/omnifocus-tui" ] && bin="$root/target/release/omnifocus-tui"
 fi
-[ -x "$bin" ] || fail "未找到二进制：$bin"
+if [ -z "$bin" ]; then
+  bin="$(command -v omnifocus-tui || true)"
+fi
+if [ -z "$bin" ]; then
+  fail "未找到 omnifocus-tui。安装方式之一：从 https://github.com/Tomyail/omnifocus-tui/releases 下载二进制放入 PATH；或安装 Rust 工具链后重试（将自动构建）"
+fi
+
+if [ -n "$root" ]; then
+  log="$root/target/omnifocus-tui-pane.log"
+else
+  log="${TMPDIR:-/tmp}/omnifocus-tui-pane.log"
+fi
 
 status=0
 "$bin" 2>"$log" || status=$?

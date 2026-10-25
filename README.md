@@ -6,21 +6,33 @@
 
 A standalone terminal UI for OmniFocus, built with Rust + Ratatui, reading and writing OmniFocus directly through [omnifocus-cli](https://github.com/stephendolan/omnifocus-cli). Runs in any interactive terminal, no herdr required.
 
-## Running
+## Installation
 
-Requires macOS, OmniFocus, Rust, and `of` installed via Bun:
+Requires macOS and OmniFocus. Install the `of` CLI via Bun:
 
 ```sh
 bun install -g @stephendolan/omnifocus-cli
-cargo run
 ```
 
+Download a prebuilt binary from [Releases](https://github.com/Tomyail/omnifocus-tui/releases) (Apple Silicon and Intel, no Rust toolchain needed):
+
 ```sh
-cargo run -- --check    # read-only connection check
-cargo run -- --capture  # quick capture to Inbox, exits after saving
-cargo run -- --keys     # key debug: print key events reported by the terminal
-cargo build --release
-./target/release/omnifocus-tui
+tar -xzf omnifocus-tui-<version>-aarch64-apple-darwin.tar.gz
+chmod +x omnifocus-tui && mv omnifocus-tui ~/.local/bin/
+```
+
+Or build from source:
+
+```sh
+cargo run                # or: cargo build --release && ./target/release/omnifocus-tui
+```
+
+Useful flags:
+
+```sh
+omnifocus-tui --check    # read-only connection check
+omnifocus-tui --capture  # quick capture to Inbox, exits after saving
+omnifocus-tui --keys     # key debug: print key events reported by the terminal
 ```
 
 The app looks for `of` on PATH, then `~/.bun/bin/of`. Set `OMNIFOCUS_CLI=/absolute/path/to/of` to override. On first use, macOS may ask for permission to automate OmniFocus.

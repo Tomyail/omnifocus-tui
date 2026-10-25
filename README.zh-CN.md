@@ -6,21 +6,33 @@
 
 独立的 OmniFocus 终端界面，使用 Rust + Ratatui，通过 [omnifocus-cli](https://github.com/stephendolan/omnifocus-cli) 直接读写 OmniFocus。可在任何交互式终端运行，不依赖 herdr。
 
-## 运行
+## 安装与运行
 
-需要 macOS、OmniFocus、Rust，以及 Bun 安装的 `of`：
+需要 macOS 和 OmniFocus。先安装 `of` CLI：
 
 ```sh
 bun install -g @stephendolan/omnifocus-cli
-cargo run
 ```
 
+从 [Releases](https://github.com/Tomyail/omnifocus-tui/releases) 下载预编译二进制（Apple Silicon 与 Intel，无需 Rust）：
+
 ```sh
-cargo run -- --check    # 只读检查连接
-cargo run -- --capture  # 快速收集到 Inbox，保存后退出
-cargo run -- --keys     # 按键调试：打印终端上报的按键事件
-cargo build --release
-./target/release/omnifocus-tui
+tar -xzf omnifocus-tui-<版本>-aarch64-apple-darwin.tar.gz
+chmod +x omnifocus-tui && mv omnifocus-tui ~/.local/bin/
+```
+
+或从源码构建：
+
+```sh
+cargo run                # 或 cargo build --release && ./target/release/omnifocus-tui
+```
+
+常用参数：
+
+```sh
+omnifocus-tui --check    # 只读检查连接
+omnifocus-tui --capture  # 快速收集到 Inbox，保存后退出
+omnifocus-tui --keys     # 按键调试：打印终端上报的按键事件
 ```
 
 程序会查找 PATH 中的 `of`，然后查找 `~/.bun/bin/of`。也可设置 `OMNIFOCUS_CLI=/absolute/path/to/of`。首次使用时，macOS 可能要求允许自动化访问 OmniFocus。
