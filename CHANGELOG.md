@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 The format is based on [Conventional Commits](https://www.conventionalcommits.org).
+## [v0.1.2](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.2) — 2026-10-25
+### Features
+
+- Update command to self-update to the latest release ([`2ceb4de`](https://github.com/Tomyail/omnifocus-tui/commit/2ceb4defc46fdf1e3b5065725f2f2661726ab6b9))
+
 ## [v0.1.1](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.1) — 2026-10-25
 ### Bug fixes
 
@@ -21,7 +26,6 @@ The format is based on [Conventional Commits](https://www.conventionalcommits.or
 
 - Herdr plugin manifest at repo root, tsk-style ([`f0598ca`](https://github.com/Tomyail/omnifocus-tui/commit/f0598ca26a3eb00f641aa4072507599b491394bc))
 - Stop touching herdr's config from our scripts ([`2d37b6b`](https://github.com/Tomyail/omnifocus-tui/commit/2d37b6b1e19e4e0b46fd2904c84d2de62eddc006))
-
 ## [v0.1.0](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.0) — 2026-10-25
 ### Bug fixes
 
