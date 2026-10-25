@@ -90,6 +90,16 @@ flag = ["f"]
 
 没有本地任务数据库，也没有 herdr 配置修改。pi 等 agent 可以继续通过现有的 OmniFocus MCP 操作同一份数据库。
 
+## Herdr 集成
+
+`integrations/herdr/` 是一个本地插件，把 TUI 以独立弹窗（popup）接入 herdr：
+
+```sh
+integrations/herdr/install.sh
+```
+
+脚本会构建 release、`herdr plugin link` 链接插件，并在 `~/.config/herdr/config.toml` 添加 `prefix+o` 键位。之后在 herdr 里按 `prefix+o` 全屏弹出 OmniFocus；TUI 内 `q` 退出即关闭弹窗。卸载：`herdr plugin unlink integrations/herdr` 并删除配置中的 `omnifocus-tui.open` 键位。
+
 ## 验证
 
 ```sh
