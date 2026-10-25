@@ -29,12 +29,6 @@ impl Lang {
     }
 
     // —— 侧栏与视图 ——
-    pub fn all_tasks(self) -> &'static str {
-        match self {
-            Lang::Zh => "全部任务",
-            Lang::En => "All Tasks",
-        }
-    }
     pub fn inbox(self) -> &'static str {
         match self {
             Lang::Zh => "收件箱",

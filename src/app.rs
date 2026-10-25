@@ -22,7 +22,6 @@ const SELECTED: Color = Color::Rgb(57, 57, 80);
 
 #[derive(Clone, Debug, PartialEq)]
 enum View {
-    All,
     Inbox,
     Flagged,
     Project(String),
@@ -153,7 +152,7 @@ impl App {
             lang: config.language,
             keys: config.keys,
             views: vec![],
-            view: View::All,
+            view: View::Inbox,
             focused_project: None,
             rows: vec![],
             sidebar: ListState::default().with_selected(Some(0)),
@@ -213,7 +212,6 @@ impl App {
                 .count()
         };
         let mut views = vec![
-            (View::All, self.lang.all_tasks().into()),
             (View::Inbox, self.lang.inbox().into()),
             (View::Flagged, self.lang.flagged_view().into()),
         ];
@@ -243,7 +241,7 @@ impl App {
         }
         self.views = views;
         if !self.views.iter().any(|(v, _)| v == &self.view) {
-            self.view = View::All;
+            self.view = View::Inbox;
         }
         self.sidebar
             .select(self.views.iter().position(|(v, _)| v == &self.view));
@@ -1291,7 +1289,6 @@ fn view_project_name<'a>(projects: &'a [Project], view: &View) -> Option<&'a str
 
 fn task_in_view(task: &Task, view: &View, project_name: Option<&str>) -> bool {
     match view {
-        View::All => true,
         View::Inbox => task.project.is_none(),
         View::Flagged => task.flagged,
         View::Project(_) => task.project.as_deref() == project_name,
@@ -1418,7 +1415,21 @@ mod tests {
                 .map(|(_, label)| label.clone())
                 .unwrap()
         };
-        assert_eq!(label(&app, &View::All), "All Tasks");
+        assert_eq!(app.view, View::Inbox);
+        assert_eq!(app.sidebar.selected(), Some(0));
+        assert_eq!(app.selected().unwrap().id, "two");
+        assert_eq!(
+            app.views
+                .iter()
+                .map(|(view, _)| view.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                View::Inbox,
+                View::Flagged,
+                View::Project("p".into()),
+                View::Project("p2".into())
+            ]
+        );
         assert_eq!(label(&app, &View::Inbox), "Inbox");
         assert_eq!(label(&app, &View::Flagged), "Flagged");
         assert_eq!(app.data.tasks[0].name, "中文任务");
@@ -1433,6 +1444,8 @@ mod tests {
             keys,
             ..Config::default()
         });
+        app.view = View::Project("p".into());
+        app.rebuild(None);
         let press = |c: char| {
             Event::Key(crossterm::event::KeyEvent::new(
                 KeyCode::Char(c),
@@ -1451,6 +1464,7 @@ mod tests {
     #[test]
     fn filters_search_and_retains_selection_by_id() {
         let mut app = app();
+        app.view = View::Project("p".into());
         app.query = "下一步".into();
         app.rebuild(None);
         assert_eq!(app.selected().unwrap().id, "one");
@@ -1458,7 +1472,7 @@ mod tests {
         app.view = View::Inbox;
         app.rebuild(None);
         assert_eq!(app.selected().unwrap().id, "two");
-        app.view = View::All;
+        app.view = View::Flagged;
         app.rebuild(Some("two".into()));
         assert_eq!(app.selected().unwrap().id, "two");
         app.query = "no match".into();
@@ -1572,6 +1586,8 @@ mod tests {
                 .count()
         };
         let mut app = app();
+        app.view = View::Project("p".into());
+        app.rebuild(None);
         // 按 F：切到项目视图，侧栏项目只剩被聚焦的一个
         app.event(press('F'));
         assert_eq!(app.view, View::Project("p".into()));
@@ -1582,9 +1598,8 @@ mod tests {
 
         // 收件箱任务：切到收件箱视图并取消聚焦
         app.sidebar_focus = true;
-        app.view = View::All;
+        app.view = View::Flagged;
         app.rebuild(None);
-        app.tasks.select(Some(1));
         app.event(press('F'));
         assert_eq!(app.view, View::Inbox);
         assert!(app.focused_project.is_none());
@@ -1593,9 +1608,8 @@ mod tests {
         assert_eq!(app.selected().unwrap().id, "two");
 
         // 聚焦另一个项目：目标随之切换
-        app.view = View::All;
+        app.view = View::Project("p2".into());
         app.rebuild(None);
-        app.tasks.select(Some(2));
         app.event(press('F'));
         assert_eq!(app.view, View::Project("p2".into()));
         assert_eq!(app.focused_project.as_deref(), Some("p2"));
@@ -1639,6 +1653,8 @@ mod tests {
     #[test]
     fn editing_tasks_switches_fields_and_requires_a_name() {
         let mut app = app();
+        app.view = View::Project("p".into());
+        app.rebuild(None);
         let press = |c: char| {
             Event::Key(crossterm::event::KeyEvent::new(
                 KeyCode::Char(c),
@@ -1758,23 +1774,24 @@ mod tests {
                 .map(|(_, label)| label.clone())
                 .unwrap()
         };
-        assert_eq!(label(&app, &View::All), "全部任务 · 1");
         assert_eq!(label(&app, &View::Inbox), "收件箱 · 0");
         assert_eq!(label(&app, &View::Flagged), "已标记 · 0");
         assert_eq!(label(&app, &View::Project("p".into())), "工作 · 1");
         assert_eq!(label(&app, &View::Project("p2".into())), "生活 · 0");
-        assert_eq!(app.rows.len(), 1);
+        assert!(app.rows.is_empty());
 
         // 无搜索词时不显示计数
         app.query.clear();
         app.rebuild(None);
-        assert_eq!(label(&app, &View::All), "全部任务");
+        assert_eq!(label(&app, &View::Inbox), "收件箱");
         assert_eq!(label(&app, &View::Project("p".into())), "工作");
     }
 
     #[test]
     fn tag_key_reuses_edit_form_at_the_tags_field() {
         let mut app = app();
+        app.view = View::Project("p".into());
+        app.rebuild(None);
         let press = |c: char| {
             Event::Key(crossterm::event::KeyEvent::new(
                 KeyCode::Char(c),
@@ -1844,6 +1861,8 @@ mod tests {
         drop(fixture);
 
         let mut app = app();
+        app.view = View::Project("p".into());
+        app.rebuild(None);
         let press = |c: char| {
             Event::Key(crossterm::event::KeyEvent::new(
                 KeyCode::Char(c),
@@ -1879,6 +1898,8 @@ mod tests {
     #[test]
     fn note_field_supports_shift_enter_newlines_and_multiline_paste() {
         let mut app = app();
+        app.view = View::Project("p".into());
+        app.rebuild(None);
         let press = |c: char| {
             Event::Key(crossterm::event::KeyEvent::new(
                 KeyCode::Char(c),

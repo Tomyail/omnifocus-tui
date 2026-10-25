@@ -75,6 +75,7 @@ Every key can be remapped in the config file — see [Key bindings](docs/keybind
 
 Worth knowing:
 
+- Starts in Inbox, followed by flagged and project views in the sidebar.
 - The list auto-refreshes every 30 seconds; operations run in the background.
 - Capture, create, flag, tag and edits write to OmniFocus immediately; completing and deleting ask for confirmation first.
 - After capturing, the app switches to Inbox and selects the new task.
