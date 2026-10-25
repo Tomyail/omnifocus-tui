@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 The format is based on [Conventional Commits](https://www.conventionalcommits.org).
-## Unreleased
+## v0.1.0 — 2026-10-25
 ### Bug fixes
 
 - Auto-create unknown tags before writing them to a task (`3d543ce`)
@@ -24,6 +24,7 @@ The format is based on [Conventional Commits](https://www.conventionalcommits.or
 ### Miscellaneous
 
 - Prepare for GitHub publish (`e83c39c`)
+- Release tooling — changelog, binary releases, no-toolchain fallback (`53cce76`)
 ### Refactoring
 
 - Fold tag editing into the shared task form (`8ff31d7`)
