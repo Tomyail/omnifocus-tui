@@ -119,19 +119,13 @@ Key syntax: single characters are case-sensitive (`f` and `F` are different keys
 
 ## Herdr integration
 
-`integrations/herdr/` is a herdr plugin that runs the TUI as a standalone popup pane. Install it straight from GitHub:
+The repo root carries a `herdr-plugin.toml`, so herdr can install it directly — a prebuilt release binary is fetched automatically (no Rust toolchain), with `cargo build` as the fallback:
 
 ```sh
-herdr plugin install Tomyail/omnifocus-tui/integrations/herdr
+herdr plugin install Tomyail/omnifocus-tui
 ```
 
-or, when developing against a local checkout:
-
-```sh
-integrations/herdr/install.sh
-```
-
-`install.sh` also appends the `prefix+o` keybinding to `~/.config/herdr/config.toml`; after `plugin install` add it yourself:
+Three actions come with it: `open` (full-screen popup), `open-split` and `open-tab`. Add a keybinding for the popup (herdr does not add keybindings for you):
 
 ```toml
 [[keys.command]]
@@ -140,7 +134,13 @@ type = "plugin_action"
 command = "omnifocus-tui.open"
 ```
 
-Press `prefix+o` in herdr for a full-screen OmniFocus popup; `q` inside the TUI closes it. To uninstall: `herdr plugin uninstall omnifocus-tui` (or `herdr plugin unlink integrations/herdr` for a local link) plus removing the keybinding.
+For local development against a checkout instead:
+
+```sh
+integrations/herdr/install.sh
+```
+
+It builds, links the repo root with `herdr plugin link`, and appends the keybinding. Press `q` inside the TUI to close the pane. The [uninstall script](#quick-start) removes the plugin and the keybinding.
 
 ## Current scope
 

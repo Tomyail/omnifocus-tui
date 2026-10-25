@@ -119,19 +119,13 @@ flag = ["f"]
 
 ## Herdr 集成
 
-`integrations/herdr/` 是一个 herdr 插件，把 TUI 以独立弹窗（popup）接入 herdr。可直接从 GitHub 一键安装：
+仓库根目录带有 `herdr-plugin.toml`，herdr 可直接安装——自动下载对应平台的 release 二进制（无需 Rust），失败时回退 cargo 构建：
 
 ```sh
-herdr plugin install Tomyail/omnifocus-tui/integrations/herdr
+herdr plugin install Tomyail/omnifocus-tui
 ```
 
-本地开发时则链接本地目录：
-
-```sh
-integrations/herdr/install.sh
-```
-
-`install.sh` 会构建 release、链接插件，并在 `~/.config/herdr/config.toml` 追加 `prefix+o` 键位；用 `plugin install` 安装的话需自行添加：
+附带三个动作：`open`（全屏弹窗）、`open-split`（分屏）、`open-tab`（新标签）。键位需自行添加（herdr 不会代改配置）：
 
 ```toml
 [[keys.command]]
@@ -140,7 +134,13 @@ type = "plugin_action"
 command = "omnifocus-tui.open"
 ```
 
-之后在 herdr 里按 `prefix+o` 全屏弹出 OmniFocus；TUI 内 `q` 退出即关闭弹窗。卸载：`herdr plugin uninstall omnifocus-tui`（本地链接用 `herdr plugin unlink integrations/herdr`）并删除上述键位。
+本地开发则链接仓库根目录：
+
+```sh
+integrations/herdr/install.sh
+```
+
+脚本会构建、`herdr plugin link` 链接仓库根、追加键位。TUI 内 `q` 退出即关闭弹窗。卸载用[快速开始](#快速开始)里的 uninstall 脚本，会一并清理插件和键位。
 
 ## 当前范围
 

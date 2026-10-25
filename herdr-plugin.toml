@@ -1,0 +1,73 @@
+id = "omnifocus-tui"
+name = "omnifocus-tui"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "OmniFocus tasks in a herdr popup pane."
+platforms = ["macos"]
+
+# On install, place a prebuilt release binary at target/release when one
+# matches this checkout's version and platform; build with cargo otherwise.
+[[build]]
+command = ["sh", "integrations/herdr/fetch-binary.sh"]
+
+# The TUI itself; run.sh locates the binary (repo build output, cargo build,
+# or omnifocus-tui on PATH) and starts it.
+[[panes]]
+id = "app"
+title = "OmniFocus"
+placement = "popup"
+width = "100%"
+height = "100%"
+command = ["sh", "integrations/herdr/run.sh"]
+
+# Actions are what keybindings and the command palette invoke.
+[[actions]]
+id = "open"
+title = "OmniFocus: open (popup)"
+description = "Open the OmniFocus TUI in a popup pane"
+contexts = ["global"]
+command = [
+  "herdr",
+  "plugin",
+  "pane",
+  "open",
+  "--plugin",
+  "omnifocus-tui",
+  "--entrypoint",
+  "app",
+  "--focus",
+]
+
+[[actions]]
+id = "open-split"
+title = "OmniFocus: open in a split"
+contexts = ["global"]
+command = [
+  "herdr",
+  "plugin",
+  "pane",
+  "open",
+  "--plugin",
+  "omnifocus-tui",
+  "--entrypoint",
+  "app",
+  "--placement",
+  "split",
+]
+
+[[actions]]
+id = "open-tab"
+title = "OmniFocus: open in a tab"
+contexts = ["global"]
+command = [
+  "herdr",
+  "plugin",
+  "pane",
+  "open",
+  "--plugin",
+  "omnifocus-tui",
+  "--entrypoint",
+  "app",
+  "--placement",
+  "tab",
+]
