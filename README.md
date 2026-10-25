@@ -1,5 +1,7 @@
 # OmniFocus TUI
 
+[![CI](https://github.com/Tomyail/omnifocus-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/Tomyail/omnifocus-tui/actions/workflows/ci.yml)
+
 [中文文档](README.zh-CN.md)
 
 A standalone terminal UI for OmniFocus, built with Rust + Ratatui, reading and writing OmniFocus directly through [omnifocus-cli](https://github.com/stephendolan/omnifocus-cli). Runs in any interactive terminal, no herdr required.
@@ -91,13 +93,28 @@ Key syntax: single characters are case-sensitive (`f` and `F` are different keys
 
 ## Herdr integration
 
-`integrations/herdr/` is a local herdr plugin that runs the TUI as a standalone popup pane:
+`integrations/herdr/` is a herdr plugin that runs the TUI as a standalone popup pane. Install it straight from GitHub:
+
+```sh
+herdr plugin install Tomyail/omnifocus-tui/integrations/herdr
+```
+
+or, when developing against a local checkout:
 
 ```sh
 integrations/herdr/install.sh
 ```
 
-The script builds the release binary, links the plugin with `herdr plugin link`, and appends a `prefix+o` keybinding to `~/.config/herdr/config.toml`. Press `prefix+o` in herdr for a full-screen OmniFocus popup; `q` inside the TUI closes it. To uninstall: `herdr plugin unlink integrations/herdr` plus removing the `omnifocus-tui.open` keybinding from the config.
+`install.sh` also appends the `prefix+o` keybinding to `~/.config/herdr/config.toml`; after `plugin install` add it yourself:
+
+```toml
+[[keys.command]]
+key = "prefix+o"
+type = "plugin_action"
+command = "omnifocus-tui.open"
+```
+
+Press `prefix+o` in herdr for a full-screen OmniFocus popup; `q` inside the TUI closes it. To uninstall: `herdr plugin uninstall omnifocus-tui` (or `herdr plugin unlink integrations/herdr` for a local link) plus removing the keybinding.
 
 ## Current scope
 

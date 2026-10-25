@@ -1,5 +1,7 @@
 # OmniFocus TUI
 
+[![CI](https://github.com/Tomyail/omnifocus-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/Tomyail/omnifocus-tui/actions/workflows/ci.yml)
+
 [English](README.md)
 
 独立的 OmniFocus 终端界面，使用 Rust + Ratatui，通过 [omnifocus-cli](https://github.com/stephendolan/omnifocus-cli) 直接读写 OmniFocus。可在任何交互式终端运行，不依赖 herdr。
@@ -91,13 +93,28 @@ flag = ["f"]
 
 ## Herdr 集成
 
-`integrations/herdr/` 是一个本地 herdr 插件，把 TUI 以独立弹窗（popup）接入 herdr：
+`integrations/herdr/` 是一个 herdr 插件，把 TUI 以独立弹窗（popup）接入 herdr。可直接从 GitHub 一键安装：
+
+```sh
+herdr plugin install Tomyail/omnifocus-tui/integrations/herdr
+```
+
+本地开发时则链接本地目录：
 
 ```sh
 integrations/herdr/install.sh
 ```
 
-脚本会构建 release、`herdr plugin link` 链接插件，并在 `~/.config/herdr/config.toml` 添加 `prefix+o` 键位。之后在 herdr 里按 `prefix+o` 全屏弹出 OmniFocus；TUI 内 `q` 退出即关闭弹窗。卸载：`herdr plugin unlink integrations/herdr` 并删除配置中的 `omnifocus-tui.open` 键位。
+`install.sh` 会构建 release、链接插件，并在 `~/.config/herdr/config.toml` 追加 `prefix+o` 键位；用 `plugin install` 安装的话需自行添加：
+
+```toml
+[[keys.command]]
+key = "prefix+o"
+type = "plugin_action"
+command = "omnifocus-tui.open"
+```
+
+之后在 herdr 里按 `prefix+o` 全屏弹出 OmniFocus；TUI 内 `q` 退出即关闭弹窗。卸载：`herdr plugin uninstall omnifocus-tui`（本地链接用 `herdr plugin unlink integrations/herdr`）并删除上述键位。
 
 ## 当前范围
 

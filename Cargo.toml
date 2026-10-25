@@ -5,6 +5,10 @@ edition = "2024"
 rust-version = "1.88"
 description = "A standalone terminal UI for OmniFocus, with optional Herdr integration"
 license = "MIT"
+repository = "https://github.com/Tomyail/omnifocus-tui"
+authors = ["Tomyail"]
+keywords = ["omnifocus", "tui", "ratatui", "terminal", "tasks"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm", "crossterm_0_29", "layout-cache"] }
