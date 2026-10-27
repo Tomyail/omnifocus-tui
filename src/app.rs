@@ -157,7 +157,7 @@ impl App {
             rows: vec![],
             sidebar: ListState::default().with_selected(Some(0)),
             tasks: ListState::default(),
-            sidebar_focus: false,
+            sidebar_focus: true,
             show_sidebar: true,
             show_detail: false,
             detail_scroll: 0,
@@ -1398,6 +1398,7 @@ mod tests {
         let mut app = App::new(true, config);
         app.capture_only = false;
         app.mode = Mode::Normal;
+        app.sidebar_focus = false;
         app.data = Snapshot::from_json(
             json!([{"id":"p","name":"工作"}, {"id":"p2","name":"生活"}]),
             json!([
@@ -1413,6 +1414,11 @@ mod tests {
 
     fn app() -> App {
         app_with(Config::default())
+    }
+
+    #[test]
+    fn starts_with_sidebar_focused() {
+        assert!(App::new(false, Config::default()).sidebar_focus);
     }
 
     #[test]
