@@ -31,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/install.
 omnifocus-tui
 ```
 
-Upgrading later is one command: `omnifocus-tui update`.
+Upgrading later is one command: `omnifocus-tui update`. The app also checks for a new release in the background at startup (at most once a day) and installs it for the next launch; set `auto_update = false` in the config file to turn this off.
 
 ### First launch
 

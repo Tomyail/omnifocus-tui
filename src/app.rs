@@ -137,6 +137,8 @@ pub struct App {
     /// 后台拉取的完整标签库，用于标签联想；为空时退回任务快照中出现过的标签。
     known_tags: Vec<String>,
     tag_job: Option<Receiver<Vec<String>>>,
+    update_job: Option<Receiver<Option<String>>>,
+    update_notice: Option<String>,
     refreshed: Instant,
     capture_only: bool,
     pub quit: bool,
@@ -175,6 +177,8 @@ impl App {
             job: None,
             known_tags: vec![],
             tag_job: None,
+            update_job: None,
+            update_notice: None,
             refreshed: Instant::now(),
             capture_only,
             quit: false,
@@ -184,6 +188,14 @@ impl App {
         app.rebuild(None);
         if !capture_only {
             app.start(Operation::Refresh);
+            if config.auto_update {
+                let (sender, receiver) = mpsc::channel();
+                let lang = app.lang;
+                std::thread::spawn(move || {
+                    let _ = sender.send(crate::update::auto(lang));
+                });
+                app.update_job = Some(receiver);
+            }
         }
         app
     }
@@ -356,6 +368,10 @@ impl App {
     }
 
     pub fn tick(&mut self) {
+        if let Some(result) = self.update_job.as_ref().and_then(|job| job.try_recv().ok()) {
+            self.update_job = None;
+            self.update_notice = result.map(|version| self.lang.update_notice(&version));
+        }
         if let Some(names) = self.tag_job.as_ref().and_then(|job| job.try_recv().ok()) {
             self.tag_job = None;
             self.known_tags = names;
@@ -1074,7 +1090,7 @@ impl App {
                 detail,
             );
         }
-        let status_text = if self.query.is_empty() {
+        let mut status_text = if self.query.is_empty() {
             self.status.clone()
         } else {
             format!(
@@ -1084,6 +1100,9 @@ impl App {
                 self.status
             )
         };
+        if let Some(notice) = &self.update_notice {
+            status_text = format!("{status_text} · {notice}");
+        }
         frame.render_widget(
             Paragraph::new(status_text)
                 .wrap(Wrap { trim: true })

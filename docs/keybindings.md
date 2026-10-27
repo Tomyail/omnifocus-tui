@@ -16,6 +16,7 @@ Rules:
 
 ```toml
 language = "en"   # UI language: zh (default) or en; falls back to the system LANG when unset
+auto_update = true   # check for a new release at startup (at most once a day); false disables
 
 [keys]
 down = ["j", "down"]

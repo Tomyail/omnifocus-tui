@@ -573,6 +573,12 @@ impl Lang {
             }
         }
     }
+    pub fn update_notice(self, version: &str) -> String {
+        match self {
+            Lang::Zh => format!("已自动更新到 v{version}，重启后生效"),
+            Lang::En => format!("Updated to v{version}; restart to use it"),
+        }
+    }
     pub fn update_fail_fetch(self) -> String {
         match self {
             Lang::Zh => "获取或下载新版本失败，请检查网络后重试，或重跑 install.sh".into(),

@@ -31,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/Tomyail/omnifocus-tui/main/install.
 omnifocus-tui
 ```
 
-以后升级只需一条命令：`omnifocus-tui update`。
+以后升级只需一条命令：`omnifocus-tui update`。启动时程序也会在后台检查新版本（每天最多一次）并安装，下次启动生效；在配置文件里设置 `auto_update = false` 可关闭。
 
 ### 首次启动
 

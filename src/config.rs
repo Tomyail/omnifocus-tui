@@ -119,6 +119,8 @@ impl Keymaps {
 pub struct Config {
     pub language: Lang,
     pub keys: Keymaps,
+    /// 启动时后台检查并安装新版本；`Config::default()` 为 false，仅用于测试，真实默认值见 from_toml。
+    pub auto_update: bool,
 }
 
 impl Config {
@@ -131,6 +133,7 @@ impl Config {
         Ok(Self {
             language,
             keys: keymaps_from_raw(raw.keys)?,
+            auto_update: raw.auto_update.unwrap_or(true),
         })
     }
 
@@ -153,6 +156,7 @@ impl Config {
         Self {
             language: Lang::detect(env_value),
             keys: Keymaps::default(),
+            auto_update: true,
         }
     }
 }
@@ -161,6 +165,7 @@ impl Config {
 #[serde(default)]
 struct RawConfig {
     language: Option<String>,
+    auto_update: Option<bool>,
     keys: RawKeys,
 }
 
@@ -342,6 +347,12 @@ mod tests {
         assert_eq!(config.language, Lang::En);
         assert_eq!(config.keys.flag, vec![Char('x')]);
         assert_eq!(Config::from_toml("").unwrap().language, Lang::Zh);
+        assert!(Config::from_toml("").unwrap().auto_update);
+        assert!(
+            !Config::from_toml("auto_update = false")
+                .unwrap()
+                .auto_update
+        );
         let error = Config::from_toml("language = \"fr\"").unwrap_err();
         assert!(error.contains("language"), "{error}");
     }

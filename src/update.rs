@@ -1,12 +1,58 @@
 use crate::i18n::Lang;
 use std::os::unix::fs::PermissionsExt;
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::Duration,
+};
 
 const REPO: &str = "Tomyail/omnifocus-tui";
 
-/// 自更新：拉取最新 release，校验后替换当前二进制。
-/// 网络与解压复用系统自带的 curl / tar / shasum，不引入额外依赖。
+const CHECK_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// `omnifocus-tui update`：立即更新并在终端汇报结果。
 pub fn run(lang: Lang) -> Result<(), Box<dyn std::error::Error>> {
+    let current = env!("CARGO_PKG_VERSION");
+    match install(lang, true)? {
+        Some(latest) => println!("{}", lang.update_done(current, &latest)),
+        None => println!("{}", lang.update_already(current)),
+    }
+    Ok(())
+}
+
+/// 启动时的后台自动更新：每 24 小时最多检查一次，失败一律静默。
+/// 返回已安装的新版本号；开发构建（位于 target/ 下）从不自动替换。
+pub fn auto(lang: Lang) -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    if exe.components().any(|part| part.as_os_str() == "target") {
+        return None;
+    }
+    let stamp = stamp_path()?;
+    let fresh = fs::metadata(&stamp)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|time| time.elapsed().ok())
+        .is_some_and(|age| age < CHECK_INTERVAL);
+    if fresh {
+        return None;
+    }
+    // 先记录检查时间：即使网络失败也不会在每次启动时重试。
+    fs::create_dir_all(stamp.parent()?).ok()?;
+    fs::write(&stamp, b"").ok()?;
+    install(lang, false).ok().flatten()
+}
+
+fn stamp_path() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
+    Some(base.join("omnifocus-tui").join("last-update-check"))
+}
+
+/// 拉取最新 release，校验后替换当前二进制；已是最新返回 None，否则返回新版本号。
+/// 网络与解压复用系统自带的 curl / tar / shasum，不引入额外依赖。
+fn install(lang: Lang, announce: bool) -> Result<Option<String>, Box<dyn std::error::Error>> {
     let current = env!("CARGO_PKG_VERSION");
     let cur =
         parse_version(current).ok_or_else(|| format!("unparsable current version: {current}"))?;
@@ -16,11 +62,12 @@ pub fn run(lang: Lang) -> Result<(), Box<dyn std::error::Error>> {
     let lat =
         parse_version(latest).ok_or_else(|| format!("unparsable release tag: {latest_tag}"))?;
     if lat <= cur {
-        println!("{}", lang.update_already(latest));
-        return Ok(());
+        return Ok(None);
     }
 
-    println!("{} v{latest}…", lang.update_downloading());
+    if announce {
+        println!("{} v{latest}…", lang.update_downloading());
+    }
     let target = format!("{}-apple-darwin", std::env::consts::ARCH);
     let dir = std::env::temp_dir().join(format!("omnifocus-tui-update-{}", std::process::id()));
     fs::create_dir_all(&dir).map_err(io_err)?;
@@ -72,9 +119,7 @@ pub fn run(lang: Lang) -> Result<(), Box<dyn std::error::Error>> {
     })();
     cleanup(&dir);
     install?;
-
-    println!("{}", lang.update_done(current, latest));
-    Ok(())
+    Ok(Some(latest.to_owned()))
 }
 
 fn io_err(error: std::io::Error) -> Box<dyn std::error::Error> {
