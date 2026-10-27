@@ -327,8 +327,8 @@ impl Lang {
     }
     pub fn keys_fields_hint(self) -> &'static str {
         match self {
-            Lang::Zh => "Tab 切换字段 · Shift+Enter 备注换行 · Enter 保存 · Esc 取消",
-            Lang::En => "Tab Fields · Shift+Enter Note Newline · Enter Save · Esc Cancel",
+            Lang::Zh => "Tab 切换字段 · Ctrl+J 备注换行 · Enter 保存 · Esc 取消",
+            Lang::En => "Tab Fields · Ctrl+J Note Newline · Enter Save · Esc Cancel",
         }
     }
     pub fn keys_suggest_hint(self) -> &'static str {

@@ -107,18 +107,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut terminal = ratatui::try_init()?;
     let result = (|| -> io::Result<()> {
-        execute!(
-            io::stdout(),
-            EnableMouseCapture,
-            EnableBracketedPaste,
-            // kitty 键盘协议：REPORT_ALL_KEYS 让 Shift+Enter 等组合键以 CSI u 上报；
-            // REPORT_ALTERNATE_KEYS 让 shift+字母/符号按布局还原成实际字符。
-            // 不支持该协议的终端会忽略这两个序列，退回传统行为。
-            PushKeyboardEnhancementFlags(
-                KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-            )
-        )?;
+        execute!(io::stdout(), EnableMouseCapture, EnableBracketedPaste)?;
+        // 不开 kitty 键盘协议的 REPORT_ALL_KEYS：它会把输入法上屏的文本也编码成
+        // CSI u，而 crossterm 不解析 associated text，中文会被整段丢弃。
         let mut app = app::App::new(args.first().is_some_and(|arg| arg == "--capture"), config);
         while !app.quit {
             app.tick();
@@ -129,12 +120,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok(())
     })();
-    let _ = execute!(
-        io::stdout(),
-        DisableMouseCapture,
-        DisableBracketedPaste,
-        PopKeyboardEnhancementFlags
-    );
+    let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste);
     ratatui::restore();
     result?;
     Ok(())

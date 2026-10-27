@@ -626,6 +626,20 @@ impl App {
                         edit.tag_index = 0;
                     }
                 }
+                // Ctrl+J（即 \n）：未启用 kitty 协议的终端里唯一稳定的换行键
+                KeyCode::Char('j')
+                    if self.mode == Mode::Edit
+                        && key.modifiers.contains(KeyModifiers::CONTROL)
+                        && self
+                            .edit
+                            .as_ref()
+                            .is_some_and(|edit| edit.field == EditField::Note) =>
+                {
+                    if let Some(edit) = self.edit.as_mut() {
+                        edit.note.push('\n');
+                        edit.tag_index = 0;
+                    }
+                }
                 KeyCode::Enter
                     if self.mode == Mode::Edit
                         && !key

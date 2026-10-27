@@ -61,4 +61,4 @@ flag = ["f"]
 
 ## Newlines in the note field
 
-Newlines accept both Shift+Enter and Option+Enter. Some macOS input methods redeliver Shift+Enter as Option+Enter; they are equivalent. Distinguishing them at the protocol level relies on the kitty keyboard protocol, supported by kitty, WezTerm, Ghostty, iTerm2, among others. In terminals without it, Option+Enter still inserts a newline.
+Newlines in the note accept Ctrl+J, Option+Enter and Shift+Enter. The kitty keyboard protocol is deliberately not enabled (it breaks IME text input), so terminals usually report Shift+Enter as plain Enter; use Ctrl+J or Option+Enter.
