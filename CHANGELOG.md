@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 The format is based on [Conventional Commits](https://www.conventionalcommits.org).
+## [v0.1.4](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.4) — 2026-10-27
+### Bug fixes
+
+- Stop enabling kitty report-all-keys so IME text input works ([`a911ba0`](https://github.com/Tomyail/omnifocus-tui/commit/a911ba004fe4e941fa0ea7e1145259f910e2d6ba))
+### Features
+
+- Start with the sidebar focused ([`ca03aba`](https://github.com/Tomyail/omnifocus-tui/commit/ca03abaf2321048c75b90b4180ebbc6e13bfecee))
 ## [v0.1.3](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.3) — 2026-10-25
 ### Bug fixes
 
