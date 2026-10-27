@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 The format is based on [Conventional Commits](https://www.conventionalcommits.org).
+## [v0.1.5](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.5) — 2026-10-27
+### Features
+
+- Auto-update in the background at startup ([`0ffe73e`](https://github.com/Tomyail/omnifocus-tui/commit/0ffe73e7039b79a12b26107624f6d906242afccf))
 ## [v0.1.4](https://github.com/Tomyail/omnifocus-tui/releases/tag/v0.1.4) — 2026-10-27
 ### Bug fixes
 

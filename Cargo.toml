@@ -1,6 +1,6 @@
 [package]
 name = "omnifocus-tui"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 rust-version = "1.88"
 description = "A standalone terminal UI for OmniFocus, with optional Herdr integration"
